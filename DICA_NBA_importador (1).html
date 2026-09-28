@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1c1712">
+<title>DICA NBA · Importador</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#efe3cf; --bg-2:#fbf6ec; --panel:#fbf6ec; --panel-2:#1c1712; --line:#d8c7ab; --line-soft:#e6d8c1;
+  --text:#1c1712; --muted:#5f5346; --faint:#76685a;
+  --red:#c9481a; --red-deep:#a93a13; --red-soft:rgba(201,72,26,.1);
+  --blue:#1f3f8f; --blue-soft:rgba(31,63,143,.08);
+  --win:#2f7d4f; --loss:#b3261e; --warn:#a86a0c;
+  --display:'Anton',Impact,'Arial Narrow',sans-serif;
+  --body:'Archivo',system-ui,-apple-system,sans-serif;
+  --st:env(safe-area-inset-top,0px); --sb:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg) repeating-linear-gradient(90deg,#efe3cf 0 46px,#e8d9bf 46px 48px);color:var(--text);font-family:var(--body);font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased;min-height:100vh}
+button,input,select{font:inherit;color:inherit}
+button{background:none;border:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.hidden{display:none!important}
+
+.screen{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:calc(24px + var(--st)) 24px calc(24px + var(--sb))}
+.brand{text-align:center;margin-bottom:30px}
+.brand .ico{margin-bottom:16px;display:flex;justify-content:center}
+.brand h1{font-family:var(--display);font-weight:400;font-size:50px;line-height:.95;letter-spacing:1px}
+.brand h1 span{display:block;font-size:20px;letter-spacing:4px;color:var(--red);margin-top:8px}
+.brand p{margin-top:12px;color:var(--faint);font-size:13px}
+.auth-box{width:100%;max-width:360px;background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:22px}
+.lbl{display:block;font-size:13px;font-weight:600;color:var(--muted);margin-bottom:6px}
+.input,.select{width:100%;height:46px;background:var(--bg-2);border:1px solid var(--line);border-radius:4px;padding:0 12px;font-size:16px;color:var(--text);appearance:none;-webkit-appearance:none}
+.input:focus,.select:focus{border-color:var(--blue);outline:none}
+.select{background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 20px) 20px,calc(100% - 15px) 20px;background-size:5px 5px;background-repeat:no-repeat;padding-right:34px}
+.select.sm,.input.sm{height:38px;font-size:14px}
+.select.sm{background-position:calc(100% - 18px) 16px,calc(100% - 13px) 16px}
+.field{margin-bottom:14px}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:48px;border-radius:4px;font-weight:700;font-size:15px;transition:background .15s}
+.btn-primary{background:var(--red);color:#fff}
+.btn-primary:hover{background:var(--red-deep)}
+.btn-blue{background:var(--panel-2);color:#fbf6ec}
+.btn-blue:hover{background:#3a3129}
+.btn:disabled{opacity:.6;cursor:wait}
+.err{margin-top:14px;color:var(--loss);font-size:14px;font-weight:600;text-align:center}
+.spin{width:16px;height:16px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.topbar{position:sticky;top:0;z-index:40;background:var(--panel);padding-top:var(--st);border-bottom:4px solid var(--red)}
+.topbar-in{display:flex;align-items:center;justify-content:space-between;height:58px;padding:0 16px;max-width:760px;margin:0 auto}
+.wm{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:400;font-size:22px;letter-spacing:.5px;line-height:1}
+.wm small{letter-spacing:0;display:block;font-family:var(--body);font-weight:500;font-size:11px;color:var(--faint);margin-top:3px}
+.stripe{height:3px;display:flex}
+.stripe i{flex:1}.stripe i:first-child{background:var(--red)}.stripe i:nth-child(2){flex:0 0 6px}.stripe i:last-child{background:var(--blue)}
+.icon-btn{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:var(--muted);font-size:18px}
+.icon-btn:hover{color:var(--loss)}
+.wrap{max-width:760px;margin:0 auto;padding:20px 16px calc(40px + var(--sb))}
+
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:18px}
+@media (max-width:520px){.modes{grid-template-columns:repeat(2,1fr)}}
+.mode{display:flex;align-items:center;gap:8px;padding:11px 12px;border:1px solid var(--line-soft);border-radius:4px;background:var(--panel);color:var(--muted);font-weight:600;font-size:14px;text-align:left}
+.mode i{width:16px;text-align:center}
+.mode.on{border-color:var(--panel-2);color:#fbf6ec;background:var(--panel-2)}
+.mode.on i{color:var(--red)}
+
+.panel{background:var(--panel);border:1px solid var(--line-soft);border-radius:4px;padding:16px;margin-bottom:12px}
+.panel-h{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+.panel-h .n{font-family:var(--display);font-weight:400;font-size:22px;color:var(--red);line-height:1}
+.panel-h h2{font-family:var(--display);font-weight:400;font-size:22px;letter-spacing:.5px;line-height:1.1}
+.panel-h p{font-size:13px;color:var(--muted)}
+.espn{border-color:var(--line);border-left:4px solid var(--blue)}
+.espn .panel-h .n{color:var(--blue)}
+.hint{font-size:13px;color:var(--muted);margin-bottom:12px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.grid3>div{min-width:0}
+@media (max-width:520px){.grid3{grid-template-columns:repeat(2,minmax(0,1fr))}.grid3 .wide{grid-column:span 2}}
+
+.dropzone{border:2px dashed var(--line);border-radius:4px;padding:30px 16px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+.dropzone:hover,.dropzone.over{border-color:var(--blue);background:var(--blue-soft)}
+.dropzone i{font-size:30px;color:var(--blue);margin-bottom:10px}
+.dropzone b{display:block}
+.dropzone span{font-size:13px;color:var(--faint)}
+.source{margin-top:10px;font-size:13px;color:var(--muted)}
+
+.map{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 14px}
+@media (max-width:560px){.map{grid-template-columns:1fr}}
+.map-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:center}
+.map-row span{font-size:13px;font-weight:600;color:var(--muted)}
+.map-row span em{font-style:normal;color:var(--red)}
+.map-row.ok span{color:var(--text)}
+
+.table-wrap{overflow-x:auto;border:1px solid var(--line-soft);border-radius:4px}
+table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
+th{background:var(--panel-2);color:#fbf6ec;font-weight:600;text-align:left;padding:8px 10px;font-size:12px}
+td{padding:8px 10px;border-top:1px solid var(--line-soft)}
+.small{font-size:12px;color:var(--faint);margin-top:8px}
+
+.check{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--muted);margin-bottom:14px;cursor:pointer}
+.check input{width:18px;height:18px;margin-top:2px;accent-color:var(--red);flex:0 0 auto}
+.log{margin-top:12px;font-size:14px;max-height:260px;overflow-y:auto}
+.log div{display:flex;gap:8px;padding:4px 0}
+.log .ok{color:var(--win)} .log .bad{color:var(--loss)} .log .info{color:var(--warn)}
+.log i{margin-top:3px}
+</style>
+</head>
+<body>
+
+<section id="login" class="screen">
+  <div class="brand">
+    <div class="ico"><svg width="84" height="84" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#1c1712"/><circle cx="50" cy="50" r="34" fill="#c9481a"/><path d="M50 16v68M16 50h68M27 25a34 34 0 0 1 0 50M73 25a34 34 0 0 0 0 50" fill="none" stroke="#1c1712" stroke-width="3"/><path d="M38 33h12a17 17 0 0 1 0 34H38z" fill="#fbf6ec" stroke="#1c1712" stroke-width="3" stroke-linejoin="round"/></svg></div>
+    <h1>DICA NBA<span>IMPORTADOR</span></h1>
+    <p>By: Ricardo Dionicio</p>
+  </div>
+  <form class="auth-box" id="login-form">
+    <div class="field"><label class="lbl" for="email">Correo electrónico</label><input class="input" type="email" id="email" placeholder="correo@ejemplo.com" autocomplete="email" required></div>
+    <div class="field" style="margin-bottom:20px"><label class="lbl" for="password">Contraseña</label><input class="input" type="password" id="password" placeholder="••••••••" autocomplete="current-password" required></div>
+    <button class="btn btn-primary" id="login-btn" type="submit">Entrar</button>
+    <p class="err hidden" id="login-error"></p>
+  </form>
+  <p style="font-size:12px;color:var(--muted);margin-top:18px">Usa las mismas credenciales de DICA NBA Analytics.</p>
+</section>
+
+<div id="app" class="hidden">
+  <header class="topbar">
+    <div class="topbar-in">
+      <div class="wm"><svg width="36" height="36" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#1c1712"/><circle cx="50" cy="50" r="34" fill="#c9481a"/><path d="M50 16v68M16 50h68M27 25a34 34 0 0 1 0 50M73 25a34 34 0 0 0 0 50" fill="none" stroke="#1c1712" stroke-width="3"/><path d="M38 33h12a17 17 0 0 1 0 34H38z" fill="#fbf6ec" stroke="#1c1712" stroke-width="3" stroke-linejoin="round"/></svg><div>DICA NBA<small>Importador · By: Ricardo Dionicio</small></div></div>
+      <button class="icon-btn" id="logout-btn" aria-label="Cerrar sesión"><i class="fa-solid fa-power-off"></i></button>
+    </div>
+    
+  </header>
+
+  <div class="wrap">
+    <div class="modes" id="modes">
+      <button class="mode" data-mode="equipos"><i class="fa-solid fa-shield-halved"></i>Equipos</button>
+      <button class="mode" data-mode="roster"><i class="fa-solid fa-users"></i>Rosters</button>
+      <button class="mode" data-mode="player-stats"><i class="fa-solid fa-user-clock"></i>Stats de jugador</button>
+      <button class="mode" data-mode="team-stats"><i class="fa-solid fa-chart-line"></i>Stats de equipo</button>
+      <button class="mode" data-mode="partidos"><i class="fa-solid fa-calendar-day"></i>Partidos del día</button>
+      <button class="mode" data-mode="usuarios"><i class="fa-solid fa-hourglass-half"></i>Vencimientos</button>
+    </div>
+
+    <!-- EQUIPO -->
+    <div class="panel" id="team-card">
+      <div class="panel-h"><span class="n">1</span><h2>Equipo</h2></div>
+      <select class="select" id="team-selector"><option value="">Cargando equipos…</option></select>
+      <p class="small hidden" id="no-teams" style="color:var(--warn)">Todavía no hay equipos. Empieza por el modo "Equipos".</p>
+    </div>
+
+    <!-- ESPN -->
+    <div class="panel espn" id="espn-card">
+      <div class="panel-h"><span class="n"><i class="fa-solid fa-satellite-dish" style="font-size:17px"></i></span><div><h2>Traer desde ESPN</h2><p id="espn-sub">Opcional. Llena la vista previa con datos reales y tú solo revisas antes de guardar.</p></div></div>
+
+      <div id="espn-teams" class="hidden">
+        <button class="btn btn-blue" id="espn-teams-btn"><i class="fa-solid fa-list"></i> Cargar los 30 equipos de la NBA</button>
+      </div>
+
+      <div id="espn-roster" class="hidden">
+        <button class="btn btn-blue" id="espn-roster-btn"><i class="fa-solid fa-users"></i> Traer roster del equipo</button>
+      </div>
+
+      <div id="espn-games" class="hidden">
+        <div class="grid3">
+          <div><label class="lbl" for="espn-season">Temporada</label><input class="input sm" id="espn-season" type="number"></div>
+          <div><label class="lbl" for="espn-type">Fase</label><select class="select sm" id="espn-type"><option value="2">Temporada regular</option><option value="5">Play-in</option><option value="3">Playoffs</option></select></div>
+          <div class="wide"><label class="lbl" for="espn-date">Fecha (opcional)</label><input class="input sm" id="espn-date" type="date"></div>
+        </div>
+        <p class="hint">La temporada 2026-27 se escribe 2027. Deja la fecha vacía para traer todos los partidos ya jugados.</p>
+        <button class="btn btn-blue" id="espn-games-btn"><i class="fa-solid fa-download"></i> Traer estadísticas</button>
+      </div>
+
+      <div id="espn-day" class="hidden">
+        <div class="grid3">
+          <div><label class="lbl" for="espn-day-date">Desde</label><input class="input sm" id="espn-day-date" type="date"></div>
+          <div><label class="lbl" for="espn-day-to">Hasta (opcional)</label><input class="input sm" id="espn-day-to" type="date"></div>
+        </div>
+        <p class="hint">Deja "Hasta" vacío para traer un solo día. Puedes traer hasta 14 días de una vez, por ejemplo toda la semana.</p>
+        <button class="btn btn-blue" id="espn-day-btn"><i class="fa-solid fa-calendar-day"></i> Traer partidos</button>
+      </div>
+
+      <div class="log" id="espn-log"></div>
+    </div>
+
+    <!-- ARCHIVO -->
+    <div class="panel" id="file-card">
+      <div class="panel-h"><span class="n" id="n-file">2</span><h2>Archivo CSV o Excel</h2></div>
+      <p class="hint" id="step-hint"></p>
+      <div class="dropzone" id="dropzone" tabindex="0" role="button">
+        <i class="fa-solid fa-cloud-arrow-up"></i>
+        <b>Arrastra tu archivo aquí</b>
+        <span>o toca para elegirlo: .csv, .xlsx, .xls</span>
+        <input type="file" id="file-input" accept=".csv,.xlsx,.xls" class="hidden">
+      </div>
+      <p class="source hidden" id="source"></p>
+    </div>
+
+    <!-- MAPEO -->
+    <div class="panel hidden" id="map-card">
+      <div class="panel-h"><span class="n" id="n-map">3</span><div><h2>Empareja las columnas</h2><p id="map-sub"></p></div></div>
+      <div class="map" id="map-fields"></div>
+    </div>
+
+    <!-- PREVIEW -->
+    <div class="panel hidden" id="preview-card">
+      <div class="panel-h"><span class="n" id="n-prev">4</span><h2>Vista previa: <span id="row-count">0</span> <span id="row-label">filas</span></h2></div>
+      <div class="table-wrap"><table><thead id="preview-head"></thead><tbody id="preview-body"></tbody></table></div>
+      <p class="small">Se muestran hasta 8 filas. Se guardan todas.</p>
+    </div>
+
+    <!-- GUARDAR -->
+    <div class="panel hidden" id="upload-card">
+      <div class="panel-h"><span class="n" id="n-up">5</span><h2>Guardar en Firebase</h2></div>
+      <label class="check hidden" id="replace-box"><input type="checkbox" id="replace"><span id="replace-label"></span></label>
+      <button class="btn btn-primary" id="upload-btn"><span id="upload-text">Guardar</span></button>
+      <div class="log hidden" id="upload-log"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, writeBatch, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+// MISMA CONFIGURACIÓN QUE DICA_NBA.html (proyecto Firebase de NBA)
+const firebaseConfig = {
+  apiKey: "AIzaSyCVkgWnZa83EjXsLCMt9YxHVq6d6Nnrw7I",
+  authDomain: "dica-nba.firebaseapp.com",
+  projectId: "dica-nba",
+  storageBucket: "dica-nba.firebasestorage.app",
+  messagingSenderId: "224764762732",
+  appId: "1:224764762732:web:7042fe57c93275c0549649",
+  measurementId: "G-QBH1GF7Q1D"
+};
+const CONFIG_OK = !String(firebaseConfig.apiKey).startsWith('PEGA');
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = v => { if (v === '' || v == null) return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
+function busy(btn, text) { btn.dataset.html = btn.dataset.html || btn.innerHTML; btn.disabled = true; btn.innerHTML = `<span class="spin"></span> ${text}`; }
+function idle(btn) { btn.disabled = false; btn.innerHTML = btn.dataset.html; }
+
+let auth = null, db = null;
+if (CONFIG_OK) { const a = initializeApp(firebaseConfig); auth = getAuth(a); db = getFirestore(a); }
+else { $('login-error').textContent = 'Falta pegar la configuración de Firebase en el archivo (busca "PEGA_AQUI").'; $('login-error').classList.remove('hidden'); }
+
+// ---------- Equipos NBA (ID de ESPN estable) ----------
+const NBA_TEAMS = [
+  [1,'Atlanta Hawks','ATL'],[2,'Boston Celtics','BOS'],[17,'Brooklyn Nets','BKN'],[30,'Charlotte Hornets','CHA'],
+  [4,'Chicago Bulls','CHI'],[5,'Cleveland Cavaliers','CLE'],[6,'Dallas Mavericks','DAL'],[7,'Denver Nuggets','DEN'],
+  [8,'Detroit Pistons','DET'],[9,'Golden State Warriors','GSW'],[10,'Houston Rockets','HOU'],[11,'Indiana Pacers','IND'],
+  [12,'LA Clippers','LAC'],[13,'Los Angeles Lakers','LAL'],[29,'Memphis Grizzlies','MEM'],[14,'Miami Heat','MIA'],
+  [15,'Milwaukee Bucks','MIL'],[16,'Minnesota Timberwolves','MIN'],[3,'New Orleans Pelicans','NOP'],[18,'New York Knicks','NYK'],
+  [25,'Oklahoma City Thunder','OKC'],[19,'Orlando Magic','ORL'],[20,'Philadelphia 76ers','PHI'],[21,'Phoenix Suns','PHX'],
+  [22,'Portland Trail Blazers','POR'],[23,'Sacramento Kings','SAC'],[24,'San Antonio Spurs','SAS'],[28,'Toronto Raptors','TOR'],
+  [26,'Utah Jazz','UTA'],[27,'Washington Wizards','WAS'],
+].map(([id, nombre, abrev]) => ({ id, nombre, abrev }));
+const NBA_BY_ESPN = Object.fromEntries(NBA_TEAMS.map(t => [t.id, t]));
+
+// ---------- Campos por modo ----------
+const F = (key, label, required = false, guesses = []) => ({ key, label, required, guesses: [key, label.toLowerCase(), ...guesses] });
+const TEAM_FIELDS = [
+  F('nombre', 'Nombre del equipo', true, ['name', 'team', 'equipo']),
+  F('abrev', 'Abreviatura', false, ['abbr', 'siglas', 'abbreviation']),
+  F('espn_id', 'ID de ESPN', false, ['espn']),
+  F('id', 'ID propio (opcional)', false, ['team_id', 'slug']),
+];
+const PLAYER_FIELDS = [
+  F('nombre', 'Nombre del jugador', true, ['name', 'player', 'jugador']),
+  F('posicion', 'Posición', false, ['posición', 'pos', 'position']),
+  F('dorsal', 'Número', false, ['jersey', 'no', '#', 'numero', 'número']),
+  F('edad', 'Edad', false, ['age']),
+  F('estatura', 'Estatura', false, ['altura', 'height', 'ht']),
+  F('peso', 'Peso', false, ['weight', 'wt']),
+  F('universidad', 'Universidad', false, ['college', 'school']),
+  F('experiencia', 'Años de experiencia', false, ['exp', 'experience']),
+  F('espn_id', 'ID de ESPN', false, ['espn']),
+];
+const P_STATS = [['min','Minutos',['mp','minutes']],['pts','Puntos',['points']],['reb','Rebotes',['trb','rebounds']],['ast','Asistencias',['assists']],
+  ['fg3m','Triples anotados',['3pm','3p','triples']],['stl','Robos',['steals','rob']],['blk','Tapones',['blocks','tap']],['tov','Pérdidas',['to','turnovers']],
+  ['fgm','Tiros de campo anotados',['fg']],['fga','Tiros de campo intentados',['fga']],['fg3a','Triples intentados',['3pa']],
+  ['ftm','Tiros libres anotados',['ft']],['fta','Tiros libres intentados',['fta']],['oreb','Rebotes ofensivos',['orb']]];
+const PLAYER_STAT_FIELDS = [
+  F('nombre', 'Nombre del jugador', true, ['name', 'player', 'jugador']),
+  F('fecha', 'Fecha del partido', true, ['date', 'dia', 'día']),
+  F('rival', 'Rival', false, ['opp', 'opponent']),
+  F('sede', 'Local / Visita', false, ['home/away', 'venue']),
+  ...P_STATS.map(([k, l, g]) => F(k, l, false, g)),
+  F('espn_id', 'ID de ESPN', false, []),
+];
+const T_STATS = [['fgm','Tiros de campo anotados'],['fga','Tiros de campo intentados'],['fg3m','Triples anotados'],['fg3a','Triples intentados'],
+  ['ftm','Tiros libres anotados'],['fta','Tiros libres intentados'],['oreb','Rebotes ofensivos'],['reb','Rebotes'],['ast','Asistencias'],
+  ['tov','Pérdidas'],['stl','Robos'],['blk','Tapones']];
+const TEAM_STAT_FIELDS = [
+  F('fecha', 'Fecha del partido', true, ['date', 'dia', 'día']),
+  F('rival', 'Rival', false, ['opp', 'opponent']),
+  F('sede', 'Local / Visita', false, ['home/away', 'venue']),
+  F('pts', 'Puntos a favor', false, ['pts_scored', 'puntos anotados', 'points']),
+  F('pts_allowed', 'Puntos en contra', false, ['puntos recibidos', 'opp_pts']),
+  ...T_STATS.map(([k, l]) => F(k, l + ' (a favor)')),
+  ...T_STATS.map(([k, l]) => F(k + '_allowed', l + ' (en contra)', false, ['opp_' + k])),
+];
+const PARTIDOS_FIELDS = [
+  F('fecha', 'Fecha', true, ['date', 'dia', 'día']),
+  F('local', 'Equipo local', true, ['home']),
+  F('visitante', 'Equipo visitante', true, ['away', 'visita']),
+];
+const USUARIOS_FIELDS = [
+  F('correo', 'Correo del usuario', true, ['email', 'correo electronico', 'correo electrónico']),
+  F('vence', 'Vence (AAAA-MM-DD)', true, ['vencimiento', 'expira', 'fecha limite', 'fecha límite']),
+];
+
+const MODES = {
+  'equipos':      { fields: TEAM_FIELDS, pk: 'nombre', team: false, espn: 'teams', rowLabel: 'equipos', hint: 'Una fila por equipo. Lo más rápido es el botón de ESPN de arriba.', up: 'Guardar equipos', replace: null },
+  'roster':       { fields: PLAYER_FIELDS, pk: 'nombre', team: true, espn: 'roster', rowLabel: 'jugadores', hint: 'Una fila por jugador del equipo elegido.', up: 'Guardar roster', replace: 'Reemplazar el roster actual. Los jugadores que ya no estén en la lista se eliminan; los que sigan conservan sus partidos.' },
+  'player-stats': { fields: PLAYER_STAT_FIELDS, pk: 'nombre', team: true, espn: 'games', rowLabel: 'filas', hint: 'Una fila por jugador y partido. Puede incluir muchas fechas en el mismo archivo.', up: 'Guardar estadísticas de jugadores', replace: 'Sobrescribir partidos que ya existían (en vez de solo completar los campos incluidos).' },
+  'team-stats':   { fields: TEAM_STAT_FIELDS, pk: 'fecha', team: true, espn: 'games', rowLabel: 'partidos', hint: 'Una fila por partido del equipo elegido. Incluye las columnas "en contra" para que el modelo mida defensa y ritmo.', up: 'Guardar estadísticas del equipo', replace: 'Sobrescribir partidos que ya existían (en vez de solo completar los campos incluidos).' },
+  'partidos':     { fields: PARTIDOS_FIELDS, pk: 'fecha', team: false, espn: 'day', rowLabel: 'partidos', hint: 'Una fila por partido: fecha, local y visitante. Usa el nombre o la abreviatura del equipo.', up: 'Guardar partidos', replace: 'Reemplazar los partidos de esa fecha si ya existían.' },
+  'usuarios':     { fields: USUARIOS_FIELDS, pk: 'correo', team: false, espn: null, rowLabel: 'usuarios', hint: 'Una fila por usuario: el correo con el que entra y la fecha en que vence su acceso.', up: 'Guardar vencimientos', replace: null },
+};
+
+let mode = 'equipos';
+let parsedRows = [], fileHeaders = [], columnMap = {};
+const cfg = () => MODES[mode];
+
+// ---------- Utilidades de texto ----------
+const slugify = t => String(t).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+const normName = t => String(t ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[.'’]/g, '').replace(/\b(jr|sr|ii|iii|iv)\b/g, '').replace(/\s+/g, ' ').trim();
+function normalizeFecha(v) {
+  const s = String(v ?? '').trim(); if (!s) return '';
+  let m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/);   // formato México: DD/MM/AAAA
+  if (m) return `${m[3].length === 2 ? '20' + m[3] : m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return slugify(s);
+}
+function normalizeSede(v) {
+  const s = normName(v);
+  if (['l', 'local', 'home', 'casa', 'vs'].includes(s)) return 'L';
+  if (['v', 'visita', 'visitante', 'away', '@', 'fuera'].includes(s)) return 'V';
+  return '';
+}
+function similarity(a, b) {
+  a = normName(a); b = normName(b);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const A = a.split(' '), B = b.split(' ');
+  let s = 0;
+  if (A[A.length - 1] === B[B.length - 1]) s += 0.6;
+  if (A[0][0] === B[0][0]) s += 0.2;
+  if (A[0] === B[0]) s += 0.1;
+  return s;
+}
+
+// ---------- Sesión (solo administradores) ----------
+if (CONFIG_OK) {
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { $('login').classList.remove('hidden'); $('app').classList.add('hidden'); return; }
+    const email = (user.email || '').toLowerCase();
+    let ok = false, err = null;
+    try { ok = (await getDoc(doc(db, 'admins_importador', email))).exists(); } catch (e) { err = e; }
+    if (!ok) {
+      $('login-error').textContent = err && String(err.code || '').includes('permission')
+        ? 'No se pudo verificar tu acceso (permiso denegado). Revisa que las reglas de Firestore estén publicadas.'
+        : err ? 'No se pudo verificar tu acceso: ' + (err.message || 'error desconocido') + '.'
+        : `Tu correo (${email}) no está en la lista de administradores.`;
+      $('login-error').classList.remove('hidden');
+      await signOut(auth);
+      return;
+    }
+    $('login-error').classList.add('hidden');
+    $('login').classList.add('hidden'); $('app').classList.remove('hidden');
+    await loadTeams();
+    applyMode();
+  });
+}
+$('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault(); if (!CONFIG_OK) return;
+  const btn = $('login-btn'); busy(btn, 'Entrando…');
+  try { await signInWithEmailAndPassword(auth, $('email').value.trim(), $('password').value); }
+  catch { $('login-error').textContent = 'Correo o contraseña incorrectos.'; $('login-error').classList.remove('hidden'); }
+  finally { idle(btn); }
+});
+$('logout-btn').addEventListener('click', () => signOut(auth));
+
+// ---------- Equipos (liga/equipos) ----------
+let teamList = {};   // { id: {nombre, abrev, espn_id} }
+async function loadTeams() {
+  try {
+    const s = await getDoc(doc(db, 'liga', 'equipos'));
+    teamList = s.exists() ? (s.data().lista || {}) : {};
+  } catch (e) { console.error(e); teamList = {}; }
+  const ids = Object.keys(teamList).sort((a, b) => teamList[a].nombre.localeCompare(teamList[b].nombre));
+  const prev = $('team-selector').value;
+  $('team-selector').innerHTML = '<option value="" disabled selected>Elige un equipo…</option>' + ids.map(id => `<option value="${esc(id)}">${esc(teamList[id].nombre)}</option>`).join('');
+  if (prev && teamList[prev]) $('team-selector').value = prev;
+  $('no-teams').classList.toggle('hidden', ids.length > 0);
+}
+const selTeamId = () => $('team-selector').value;
+const selTeamName = () => teamList[selTeamId()]?.nombre || '';
+function findNbaTeam(name) {
+  const n = normName(name); if (!n) return null;
+  const exact = NBA_TEAMS.find(t => normName(t.nombre) === n || t.abrev.toLowerCase() === n);
+  if (exact) return exact;
+  const words = n.split(' ').filter(w => w.length > 2);
+  return NBA_TEAMS.find(t => { const tw = normName(t.nombre).split(' '); return words.some(w => tw.includes(w) && !['los', 'new', 'san', 'city'].includes(w)); }) || null;
+}
+function espnIdFor(teamId) {
+  const t = teamList[teamId];
+  return num(t?.espn_id) || findNbaTeam(t?.nombre)?.id || null;
+}
+function localTeamByEspn(espnId) {
+  const id = Object.keys(teamList).find(k => Number(teamList[k].espn_id) === Number(espnId));
+  if (id) return { id, ...teamList[id] };
+  const nba = NBA_BY_ESPN[espnId];
+  if (!nba) return null;
+  const id2 = Object.keys(teamList).find(k => normName(teamList[k].nombre) === normName(nba.nombre));
+  return id2 ? { id: id2, ...teamList[id2] } : { id: null, ...nba };
+}
+function localTeamByName(name) {
+  const n = normName(name);
+  const id = Object.keys(teamList).find(k => normName(teamList[k].nombre) === n || normName(teamList[k].abrev) === n);
+  if (id) return id;
+  const nba = findNbaTeam(name);
+  if (!nba) return null;
+  return Object.keys(teamList).find(k => Number(teamList[k].espn_id) === nba.id || normName(teamList[k].nombre) === normName(nba.nombre)) || null;
+}
+
+// ---------- Modo ----------
+function applyMode() {
+  const c = cfg();
+  document.querySelectorAll('.mode').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+  $('team-card').classList.toggle('hidden', !c.team);
+  $('espn-card').classList.toggle('hidden', !c.espn);
+  ['teams', 'roster', 'games', 'day'].forEach(k => $('espn-' + k).classList.toggle('hidden', c.espn !== k));
+  $('espn-log').innerHTML = '';
+  $('step-hint').textContent = c.hint;
+  $('upload-text').textContent = c.up;
+  $('replace-box').classList.toggle('hidden', !c.replace);
+  $('replace-label').textContent = c.replace || '';
+  $('replace').checked = false;
+  // numeración de pasos según si hay paso de equipo
+  const base = c.team ? 2 : 1;
+  $('n-file').textContent = base; $('n-map').textContent = base + 1; $('n-prev').textContent = base + 2; $('n-up').textContent = base + 3;
+  resetFile();
+}
+document.querySelectorAll('.mode').forEach(b => b.addEventListener('click', () => { mode = b.dataset.mode; applyMode(); }));
+
+function resetFile() {
+  parsedRows = []; fileHeaders = []; columnMap = {};
+  $('file-input').value = '';
+  $('source').classList.add('hidden');
+  ['map-card', 'preview-card', 'upload-card'].forEach(id => $(id).classList.add('hidden'));
+  $('upload-log').classList.add('hidden'); $('upload-log').innerHTML = '';
+}
+
+// ---------- Archivo ----------
+const dz = $('dropzone');
+dz.addEventListener('click', () => $('file-input').click());
+dz.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file-input').click(); } });
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
+$('file-input').addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+function setSource(text) { $('source').innerHTML = text; $('source').classList.remove('hidden'); }
+
+function handleFile(file) {
+  setSource(`<i class="fa-solid fa-file"></i> ${esc(file.name)}`);
+  if (/\.xlsx?$/i.test(file.name)) {
+    const r = new FileReader();
+    r.onload = e => {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
+      const matrix = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', blankrows: false });
+      matrix.forEach(row => row.forEach((c, i) => {
+        if (c instanceof Date) row[i] = `${c.getFullYear()}-${String(c.getMonth() + 1).padStart(2, '0')}-${String(c.getDate()).padStart(2, '0')}`;
+      }));
+      onMatrix(matrix);
+    };
+    r.readAsArrayBuffer(file);
+  } else {
+    Papa.parse(file, { header: false, skipEmptyLines: true, complete: res => onMatrix(res.data), error: err => alert('Error leyendo el archivo: ' + err.message) });
+  }
+}
+
+function detectHeaderRow(matrix) {
+  const kw = new Set(); cfg().fields.forEach(f => f.guesses.forEach(g => kw.add(g.toLowerCase())));
+  let best = 0, bestScore = -1;
+  for (let i = 0; i < Math.min(matrix.length, 15); i++) {
+    const score = (matrix[i] || []).filter(c => kw.has(String(c ?? '').trim().toLowerCase())).length;
+    if (score > bestScore) { bestScore = score; best = i; }
+  }
+  return bestScore > 0 ? best : 0;
+}
+function onMatrix(matrix) {
+  matrix = matrix.filter(r => Array.isArray(r) && r.some(v => String(v ?? '').trim() !== ''));
+  if (!matrix.length) return alert('El archivo no tiene filas con datos.');
+  const h = detectHeaderRow(matrix);
+  const headers = (matrix[h] || []).map(x => String(x ?? '').trim());
+  const rows = matrix.slice(h + 1).map(row => { const o = {}; headers.forEach((k, i) => { if (k) o[k] = row[i] ?? ''; }); return o; })
+    .filter(r => Object.values(r).some(v => String(v).trim() !== ''));
+  if (!rows.length) return alert('No hay filas de datos debajo de los encabezados.');
+  loadRows(rows, headers.filter(Boolean));
+}
+function loadRows(rows, headers) {
+  parsedRows = rows;
+  fileHeaders = headers || Array.from(new Set(rows.flatMap(r => Object.keys(r))));
+  buildMapping();
+}
+
+// ---------- Mapeo ----------
+function buildMapping() {
+  columnMap = {};
+  let auto = 0;
+  $('map-fields').innerHTML = cfg().fields.map(f => {
+    const g = fileHeaders.find(h => f.guesses.includes(h.trim().toLowerCase())) || '';
+    columnMap[f.key] = g; if (g) auto++;
+    return `<label class="map-row ${g ? 'ok' : ''}"><span>${esc(f.label)}${f.required ? ' <em>*</em>' : ''}</span>
+      <select class="select sm" data-k="${f.key}"><option value="">Ignorar</option>${fileHeaders.map(h => `<option value="${esc(h)}" ${h === g ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></label>`;
+  }).join('');
+  $('map-sub').textContent = `${auto} de ${cfg().fields.length} columnas detectadas automáticamente.`;
+  $('map-card').classList.remove('hidden');
+  $('map-fields').querySelectorAll('select').forEach(s => s.addEventListener('change', e => {
+    columnMap[e.target.dataset.k] = e.target.value;
+    e.target.closest('.map-row').classList.toggle('ok', !!e.target.value);
+    renderPreview();
+  }));
+  renderPreview();
+}
+function buildRecord(row) {
+  const r = {};
+  cfg().fields.forEach(f => { const h = columnMap[f.key]; r[f.key] = h ? String(row[h] ?? '').trim() : ''; });
+  return r;
+}
+function records() { const pk = cfg().pk; return parsedRows.map(buildRecord).filter(r => r[pk]); }
+function renderPreview() {
+  const pk = cfg().pk;
+  if (!columnMap[pk]) { $('preview-card').classList.add('hidden'); $('upload-card').classList.add('hidden'); return; }
+  const recs = records();
+  const fields = cfg().fields.filter(f => columnMap[f.key]);
+  $('row-count').textContent = recs.length; $('row-label').textContent = cfg().rowLabel;
+  $('preview-head').innerHTML = '<tr>' + fields.map(f => `<th>${esc(f.label)}</th>`).join('') + '</tr>';
+  $('preview-body').innerHTML = recs.slice(0, 8).map(r => '<tr>' + fields.map(f => `<td>${esc(r[f.key] || '–')}</td>`).join('') + '</tr>').join('');
+  $('preview-card').classList.remove('hidden'); $('upload-card').classList.remove('hidden');
+}
+
+// ---------- Guardado ----------
+function logger(el) {
+  return (msg, kind = 'ok') => {
+    const ic = kind === 'ok' ? 'fa-circle-check' : kind === 'bad' ? 'fa-circle-xmark' : 'fa-circle-info';
+    el.insertAdjacentHTML('beforeend', `<div class="${kind}"><i class="fa-solid ${ic}"></i><span>${msg}</span></div>`);
+    el.scrollTop = el.scrollHeight;
+  };
+}
+function statRecord(r, keys) {
+  const out = {};
+  keys.forEach(k => { const v = num(r[k]); if (v != null) out[k] = v; });
+  if (r.rival) out.rival = String(r.rival).trim();
+  const sede = normalizeSede(r.sede); if (sede) out.sede = sede;
+  return out;
+}
+function checkSize(data, what) {
+  const bytes = new Blob([JSON.stringify(data)]).size;
+  if (bytes > 950000) throw new Error(`${what} supera el límite de 1 MB por documento de Firestore.`);
+  return bytes;
+}
+
+async function saveEquipos(recs, log) {
+  const batch = writeBatch(db); const lista = {};
+  recs.forEach(r => {
+    const id = slugify(r.id || r.nombre); if (!id) return;
+    const known = findNbaTeam(r.nombre);
+    const meta = { nombre: r.nombre.trim(), abrev: (r.abrev || known?.abrev || '').toUpperCase(), espn_id: num(r.espn_id) ?? known?.id ?? null };
+    lista[id] = meta;
+    batch.set(doc(db, 'equipos', id), meta, { merge: true });
+  });
+  batch.set(doc(db, 'liga', 'equipos'), { lista }, { merge: true });
+  await batch.commit();
+  log(`${Object.keys(lista).length} equipos guardados.`);
+  await loadTeams();
+}
+
+async function saveRoster(teamId, recs, log) {
+  const ref = doc(db, 'rosters', teamId);
+  const snap = await getDoc(ref);
+  const cur = snap.exists() ? (snap.data().jugadores || {}) : {};
+  const replace = $('replace').checked;
+  const next = replace ? {} : { ...cur };
+  const used = {}, dups = [];
+  recs.forEach(r => {
+    const base = slugify(r.nombre); let id = base;
+    if (used[base] !== undefined) { used[base]++; id = `${base}-${used[base]}`; dups.push(r.nombre); } else used[base] = 0;
+    const info = {};
+    PLAYER_FIELDS.forEach(f => { const v = r[f.key]; if (v !== '' && v != null) info[f.key] = f.key === 'espn_id' ? String(v) : (num(v) ?? v); });
+    next[id] = { ...(cur[id] || {}), ...info, juegos: cur[id]?.juegos || {} };
+  });
+  const data = { equipo: teamId, jugadores: next };
+  checkSize(data, 'El roster');
+  await setDoc(ref, data);
+  const removed = replace ? Object.keys(cur).filter(k => !next[k]).length : 0;
+  log(`${recs.length} jugadores guardados en ${esc(selTeamName())}.${removed ? ` ${removed} jugadores que ya no están fueron retirados.` : ''}`);
+  if (dups.length) log(`Nombres repetidos: ${esc(dups.join(', '))}. Se guardaron todos; revisa que no sea el mismo jugador dos veces.`, 'info');
+}
+
+async function savePlayerStats(teamId, recs, log) {
+  const ref = doc(db, 'rosters', teamId);
+  const snap = await getDoc(ref);
+  const data = snap.exists() ? snap.data() : null;
+  const js = data?.jugadores || {};
+  if (!Object.keys(js).length) throw new Error('Este equipo no tiene roster. Súbelo primero en el modo "Rosters".');
+  const byName = {}, byEspn = {};
+  Object.keys(js).forEach(id => { byName[normName(js[id].nombre)] = id; if (js[id].espn_id) byEspn[String(js[id].espn_id)] = id; });
+  const overwrite = $('replace').checked;
+  const keys = P_STATS.map(s => s[0]);
+  let saved = 0; const unmatched = new Set(), fechas = new Set();
+  recs.forEach(r => {
+    const fecha = normalizeFecha(r.fecha); if (!fecha) return;
+    let pid = (r.espn_id && byEspn[String(r.espn_id)]) || byName[normName(r.nombre)];
+    if (!pid) {   // coincidencia tolerante por apellido
+      let best = null, bs = 0; Object.keys(js).forEach(id => { const s = similarity(r.nombre, js[id].nombre); if (s > bs) { bs = s; best = id; } });
+      if (bs >= 0.8) pid = best;
+    }
+    if (!pid) { unmatched.add(r.nombre); return; }
+    const rec = statRecord(r, keys);
+    js[pid].juegos = js[pid].juegos || {};
+    js[pid].juegos[fecha] = overwrite ? rec : { ...(js[pid].juegos[fecha] || {}), ...rec };
+    saved++; fechas.add(fecha);
+  });
+  if (!saved) throw new Error('Ninguna fila coincidió con el roster (revisa nombre y fecha).');
+  const bytes = checkSize(data, 'El roster con sus partidos');
+  await setDoc(ref, data);
+  log(`${saved} líneas guardadas en ${fechas.size} fechas para ${esc(selTeamName())}. Documento: ${Math.round(bytes / 1024)} KB de 1024 KB.`);
+  if (unmatched.size) log(`Sin coincidencia en el roster: ${esc([...unmatched].join(', '))}.`, 'info');
+}
+
+async function saveTeamStats(teamId, recs, log) {
+  const ref = doc(db, 'equipos', teamId);
+  const snap = await getDoc(ref);
+  const data = snap.exists() ? snap.data() : { ...(teamList[teamId] || { nombre: selTeamName() }) };
+  data.juegos = data.juegos || {};
+  const overwrite = $('replace').checked;
+  const keys = ['pts', 'pts_allowed', ...T_STATS.map(s => s[0]), ...T_STATS.map(s => s[0] + '_allowed')];
+  let saved = 0;
+  recs.forEach(r => {
+    const fecha = normalizeFecha(r.fecha); if (!fecha) return;
+    const rec = statRecord(r, keys);
+    data.juegos[fecha] = overwrite ? rec : { ...(data.juegos[fecha] || {}), ...rec };
+    saved++;
+  });
+  if (!saved) throw new Error('Ninguna fila válida (revisa la columna de fecha).');
+  const bytes = checkSize(data, 'El documento del equipo');
+  await setDoc(ref, data);
+  log(`${saved} partidos guardados para ${esc(selTeamName())} (${Object.keys(data.juegos).length} en total, ${Math.round(bytes / 1024)} KB).`);
+}
+
+async function savePartidos(recs, log) {
+  const byFecha = {}, unmatched = new Set();
+  recs.forEach(r => {
+    const fecha = normalizeFecha(r.fecha); if (!fecha || !r.local || !r.visitante) return;
+    const L = localTeamByName(r.local), V = localTeamByName(r.visitante);
+    if (!L) { unmatched.add(r.local); return; }
+    if (!V) { unmatched.add(r.visitante); return; }
+    (byFecha[fecha] = byFecha[fecha] || []).push({ local: L, localNombre: teamList[L].nombre, visitante: V, visitanteNombre: teamList[V].nombre });
+  });
+  const fechas = Object.keys(byFecha);
+  if (!fechas.length) throw new Error('Ningún partido válido.' + (unmatched.size ? ` Equipos no encontrados: ${[...unmatched].join(', ')}.` : ''));
+  const replace = $('replace').checked;
+  const batch = writeBatch(db);
+  let total = 0;
+  for (const f of fechas) {
+    let juegos = [];
+    if (!replace) { const s = await getDoc(doc(db, 'partidos_dia', f)); juegos = s.exists() ? (s.data().juegos || []) : []; }
+    byFecha[f].forEach(g => { if (!juegos.some(x => x.local === g.local && x.visitante === g.visitante)) { juegos.push(g); total++; } });
+    batch.set(doc(db, 'partidos_dia', f), { fecha: f, juegos });
+  }
+  batch.set(doc(db, 'liga', 'indice'), { fechas_partidos: arrayUnion(...fechas) }, { merge: true });
+  await batch.commit();
+  log(`${total} partidos guardados en ${fechas.length} ${fechas.length === 1 ? 'fecha' : 'fechas'}.`);
+  if (unmatched.size) log(`Equipos no encontrados: ${esc([...unmatched].join(', '))}.`, 'info');
+}
+
+async function saveUsuarios(recs, log) {
+  const batch = writeBatch(db); let n = 0;
+  recs.forEach(r => {
+    if (!r.correo || !r.vence) return;
+    batch.set(doc(db, 'acceso_usuarios', r.correo.trim().toLowerCase()), { vence: normalizeFecha(r.vence) }, { merge: true });
+    n++;
+  });
+  if (!n) throw new Error('Ninguna fila válida (revisa correo y fecha).');
+  await batch.commit();
+  log(`${n} fechas de vencimiento guardadas.`);
+}
+
+$('upload-btn').addEventListener('click', async () => {
+  const c = cfg();
+  if (c.team && !selTeamId()) return alert('Elige un equipo.');
+  if (!columnMap[c.pk]) return alert(`Empareja la columna "${c.fields.find(f => f.key === c.pk).label}".`);
+  const recs = records();
+  if (!recs.length) return alert('No hay filas válidas.');
+  const btn = $('upload-btn'); busy(btn, 'Guardando…');
+  const el = $('upload-log'); el.innerHTML = ''; el.classList.remove('hidden');
+  const log = logger(el);
+  try {
+    const t = selTeamId();
+    if (mode === 'equipos') await saveEquipos(recs, log);
+    else if (mode === 'roster') await saveRoster(t, recs, log);
+    else if (mode === 'player-stats') await savePlayerStats(t, recs, log);
+    else if (mode === 'team-stats') await saveTeamStats(t, recs, log);
+    else if (mode === 'partidos') await savePartidos(recs, log);
+    else if (mode === 'usuarios') await saveUsuarios(recs, log);
+    parsedRows = []; fileHeaders = []; columnMap = {};
+    $('file-input').value = ''; $('source').classList.add('hidden');
+    $('map-card').classList.add('hidden'); $('preview-card').classList.add('hidden');
+    log('Listo para la siguiente carga.', 'info');
+  } catch (e) {
+    console.error(e);
+    log('No se guardó: ' + esc(e.message), 'bad');
+  } finally { idle(btn); }
+});
+
+// =========================================================
+// ESPN (API pública no oficial, sin llave)
+// =========================================================
+const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba';
+const espnLog = logger($('espn-log'));
+const etDate = iso => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+async function espnJson(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`ESPN respondió con error ${r.status}. Puede estar caído un momento; intenta de nuevo.`);
+  return r.json();
+}
+const summaryCache = {};
+async function espnSummary(eventId) {
+  if (!summaryCache[eventId]) summaryCache[eventId] = await espnJson(`${ESPN}/summary?event=${eventId}`);
+  return summaryCache[eventId];
+}
+const now = new Date();
+$('espn-season').value = now.getMonth() >= 8 ? now.getFullYear() + 1 : now.getFullYear();
+$('espn-day-date').value = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
+// Equipos
+$('espn-teams-btn').addEventListener('click', () => {
+  loadRows(NBA_TEAMS.map(t => ({ nombre: t.nombre, abrev: t.abrev, espn_id: t.id })), ['nombre', 'abrev', 'espn_id']);
+  setSource('<i class="fa-solid fa-satellite-dish"></i> Lista oficial de los 30 equipos');
+});
+
+// Roster
+$('espn-roster-btn').addEventListener('click', async () => {
+  const teamId = selTeamId(); if (!teamId) return alert('Elige un equipo primero.');
+  const espnId = espnIdFor(teamId); if (!espnId) return alert(`No reconozco "${selTeamName()}" como equipo NBA. Revisa el nombre.`);
+  const btn = $('espn-roster-btn'); busy(btn, 'Buscando roster…'); $('espn-log').innerHTML = '';
+  try {
+    const d = await espnJson(`${ESPN}/teams/${espnId}/roster`);
+    let ath = d.athletes || [];
+    if (ath.length && ath[0].items) ath = ath.flatMap(g => g.items);
+    if (!ath.length) throw new Error('ESPN no devolvió jugadores para este equipo.');
+    const rows = ath.map(a => ({
+      nombre: a.displayName || a.fullName, posicion: a.position?.abbreviation || '', dorsal: a.jersey || '',
+      edad: a.age ?? '', estatura: a.displayHeight || '', peso: a.displayWeight || '',
+      universidad: a.college?.name || '', experiencia: a.experience?.years ?? '', espn_id: a.id || ''
+    }));
+    loadRows(rows, Object.keys(rows[0]));
+    setSource(`<i class="fa-solid fa-satellite-dish"></i> Roster de ESPN: ${esc(selTeamName())}`);
+    espnLog(`${rows.length} jugadores encontrados.`);
+  } catch (e) { console.error(e); espnLog(esc(e.message), 'bad'); }
+  finally { idle(btn); }
+});
+
+// Box score → líneas por jugador
+function parseBoxPlayers(teamBox) {
+  const out = [];
+  (teamBox?.statistics || []).forEach(cat => {
+    const labels = (cat.labels || cat.names || []).map(s => String(s).toUpperCase());
+    const keys = cat.keys || [];
+    (cat.athletes || []).forEach(a => {
+      if (a.didNotPlay || !a.stats || !a.stats.length) return;
+      const st = {};
+      labels.forEach((l, i) => st[l] = a.stats[i]);
+      keys.forEach((k, i) => st['k:' + k] = a.stats[i]);
+      const pair = v => { const m = String(v ?? '').split('-'); return [Number(m[0]) || 0, Number(m[1]) || 0]; };
+      const n = (l, k) => Number(st[l] ?? st['k:' + k] ?? 0) || 0;
+      const min = parseInt(String(st['MIN'] ?? st['k:minutes'] ?? '0'), 10) || 0;
+      if (min <= 0) return;
+      const fg = pair(st['FG'] ?? st['k:fieldGoalsMade-fieldGoalsAttempted']);
+      const tp = pair(st['3PT'] ?? st['k:threePointFieldGoalsMade-threePointFieldGoalsAttempted']);
+      const ft = pair(st['FT'] ?? st['k:freeThrowsMade-freeThrowsAttempted']);
+      out.push({
+        espnId: String(a.athlete?.id || ''), name: a.athlete?.displayName || '', min,
+        pts: n('PTS', 'points'), reb: n('REB', 'rebounds'), ast: n('AST', 'assists'), stl: n('STL', 'steals'),
+        blk: n('BLK', 'blocks'), tov: n('TO', 'turnovers'), oreb: n('OREB', 'offensiveRebounds'),
+        fgm: fg[0], fga: fg[1], fg3m: tp[0], fg3a: tp[1], ftm: ft[0], fta: ft[1]
+      });
+    });
+  });
+  return out;
+}
+const TOT_KEYS = ['pts', 'fgm', 'fga', 'fg3m', 'fg3a', 'ftm', 'fta', 'oreb', 'reb', 'ast', 'tov', 'stl', 'blk'];
+function teamTotals(summary, espnId) {
+  const box = (summary.boxscore?.players || []).find(t => String(t.team?.id) === String(espnId));
+  const lines = parseBoxPlayers(box);
+  const tot = Object.fromEntries(TOT_KEYS.map(k => [k, 0]));
+  lines.forEach(l => TOT_KEYS.forEach(k => tot[k] += l[k] || 0));
+  const tb = (summary.boxscore?.teams || []).find(t => String(t.team?.id) === String(espnId));
+  const ts = name => { const s = (tb?.statistics || []).find(x => x.name === name); const v = s ? Number(s.displayValue) : NaN; return Number.isFinite(v) ? v : null; };
+  const reb = ts('totalRebounds'); if (reb != null) tot.reb = reb;          // incluye rebotes de equipo
+  const tov = ts('totalTurnovers') ?? ts('turnovers'); if (tov != null) tot.tov = tov;
+  const comp = summary.header?.competitions?.[0]?.competitors || [];
+  const me = comp.find(c => String(c.id ?? c.team?.id) === String(espnId));
+  if (me && Number.isFinite(Number(me.score))) tot.pts = Number(me.score);
+  return { tot, lines, ok: lines.length > 0 };
+}
+
+async function espnTeamGames(espnId, season, stype, fecha) {
+  const d = await espnJson(`${ESPN}/teams/${espnId}/schedule?season=${season}&seasontype=${stype}`);
+  let evs = (d.events || []).filter(e => e.competitions?.[0]?.status?.type?.completed);
+  if (fecha) evs = evs.filter(e => etDate(e.date) === fecha);
+  return evs.map(e => {
+    const comp = e.competitions[0];
+    const me = comp.competitors.find(c => String(c.id ?? c.team?.id) === String(espnId));
+    const op = comp.competitors.find(c => c !== me);
+    const opId = Number(op?.id ?? op?.team?.id);
+    return { eventId: e.id, fecha: etDate(e.date), sede: me?.homeAway === 'home' ? 'L' : 'V', rivalId: opId,
+      rival: NBA_BY_ESPN[opId]?.abrev || op?.team?.abbreviation || op?.team?.displayName || '' };
+  });
+}
+
+$('espn-games-btn').addEventListener('click', async () => {
+  const teamId = selTeamId(); if (!teamId) return alert('Elige un equipo primero.');
+  const espnId = espnIdFor(teamId); if (!espnId) return alert(`No reconozco "${selTeamName()}" como equipo NBA.`);
+  const season = $('espn-season').value, stype = $('espn-type').value, fecha = $('espn-date').value;
+  const btn = $('espn-games-btn'); busy(btn, 'Buscando partidos…'); $('espn-log').innerHTML = '';
+  try {
+    const games = await espnTeamGames(espnId, season, stype, fecha);
+    if (!games.length) throw new Error(fecha ? `No hay partido terminado de ${selTeamName()} el ${fecha}.` : `No encontré partidos terminados en la temporada ${season}.`);
+    espnLog(`${games.length} ${games.length === 1 ? 'partido encontrado' : 'partidos encontrados'}. Leyendo box scores…`, 'info');
+    const results = [];
+    for (let i = 0; i < games.length; i += 4) {   // de 4 en 4 para no saturar a ESPN
+      const chunk = games.slice(i, i + 4);
+      const sums = await Promise.all(chunk.map(g => espnSummary(g.eventId).catch(() => null)));
+      chunk.forEach((g, j) => { if (sums[j]) results.push({ g, s: sums[j] }); });
+      btn.innerHTML = `<span class="spin"></span> ${Math.min(i + 4, games.length)} de ${games.length}`;
+    }
+    if (mode === 'team-stats') buildTeamRows(results, espnId);
+    else await buildPlayerRows(results, espnId, teamId);
+  } catch (e) { console.error(e); espnLog(esc(e.message), 'bad'); }
+  finally { idle(btn); }
+});
+
+function buildTeamRows(results, espnId) {
+  const rows = [];
+  results.forEach(({ g, s }) => {
+    const us = teamTotals(s, espnId), them = teamTotals(s, g.rivalId);
+    if (!us.ok || !them.ok) return;
+    const row = { fecha: g.fecha, rival: g.rival, sede: g.sede, pts: us.tot.pts, pts_allowed: them.tot.pts };
+    T_STATS.forEach(([k]) => { row[k] = us.tot[k]; row[k + '_allowed'] = them.tot[k]; });
+    rows.push(row);
+  });
+  if (!rows.length) throw new Error('ESPN aún no tiene el box score de esos partidos.');
+  loadRows(rows, Object.keys(rows[0]));
+  setSource(`<i class="fa-solid fa-satellite-dish"></i> ESPN: ${rows.length} partidos de ${esc(selTeamName())}`);
+  espnLog(`${rows.length} partidos listos para revisar.`);
+}
+
+async function buildPlayerRows(results, espnId, teamId) {
+  const snap = await getDoc(doc(db, 'rosters', teamId));
+  const js = snap.exists() ? (snap.data().jugadores || {}) : {};
+  const roster = Object.keys(js).map(id => ({ id, nombre: js[id].nombre, espn_id: js[id].espn_id ? String(js[id].espn_id) : '' }));
+  if (!roster.length) throw new Error('Este equipo no tiene roster. Tráelo primero en el modo "Rosters".');
+  const rows = [], outside = new Set();
+  results.forEach(({ g, s }) => {
+    const { lines } = teamTotals(s, espnId);
+    lines.forEach(l => {
+      let p = roster.find(r => r.espn_id && r.espn_id === l.espnId);
+      if (!p) { let best = null, bs = 0; roster.forEach(r => { const sc = similarity(r.nombre, l.name); if (sc > bs) { bs = sc; best = r; } }); if (bs >= 0.8) p = best; }
+      if (!p) { outside.add(l.name); return; }
+      rows.push({ nombre: p.nombre, fecha: g.fecha, rival: g.rival, sede: g.sede, min: l.min, pts: l.pts, reb: l.reb, ast: l.ast,
+        fg3m: l.fg3m, stl: l.stl, blk: l.blk, tov: l.tov, fgm: l.fgm, fga: l.fga, fg3a: l.fg3a, ftm: l.ftm, fta: l.fta, oreb: l.oreb, espn_id: l.espnId });
+    });
+  });
+  if (!rows.length) throw new Error('Ningún jugador del box score coincidió con tu roster.');
+  loadRows(rows, Object.keys(rows[0]));
+  setSource(`<i class="fa-solid fa-satellite-dish"></i> ESPN: ${rows.length} líneas de ${esc(selTeamName())}`);
+  espnLog(`${rows.length} líneas de jugador en ${results.length} partidos.`);
+  if (outside.size) espnLog(`Jugaron pero no están en tu roster (actualízalo si hubo cambios): ${esc([...outside].join(', '))}.`, 'info');
+}
+
+// Partidos del día (uno o varios días)
+function addDays(f, n) { const [y, m, d] = f.split('-').map(Number); const dt = new Date(Date.UTC(y, m - 1, d + n)); return dt.toISOString().slice(0, 10); }
+$('espn-day-btn').addEventListener('click', async () => {
+  const desde = $('espn-day-date').value; if (!desde) return alert('Elige la fecha inicial.');
+  const hasta = $('espn-day-to').value || desde;
+  if (hasta < desde) return alert('"Hasta" no puede ser antes de "Desde".');
+  const dias = [];
+  for (let f = desde; f <= hasta && dias.length < 14; f = addDays(f, 1)) dias.push(f);
+  const btn = $('espn-day-btn'); busy(btn, 'Buscando…'); $('espn-log').innerHTML = '';
+  try {
+    const rows = [], missing = new Set();
+    for (let i = 0; i < dias.length; i++) {
+      btn.innerHTML = `<span class="spin"></span> Día ${i + 1} de ${dias.length}`;
+      const fecha = dias[i];
+      const d = await espnJson(`${ESPN}/scoreboard?dates=${fecha.replace(/-/g, '')}`);
+      (d.events || []).forEach(e => {
+        const comp = e.competitions?.[0]?.competitors || [];
+        const h = comp.find(c => c.homeAway === 'home'), a = comp.find(c => c.homeAway === 'away');
+        if (!h || !a) return;
+        const H = localTeamByEspn(Number(h.id ?? h.team?.id)), A = localTeamByEspn(Number(a.id ?? a.team?.id));
+        if (!H?.id) missing.add(h.team?.displayName); if (!A?.id) missing.add(a.team?.displayName);
+        rows.push({ fecha, local: H?.nombre || h.team?.displayName, visitante: A?.nombre || a.team?.displayName });
+      });
+    }
+    if (!rows.length) throw new Error('ESPN no tiene partidos NBA en esas fechas.');
+    loadRows(rows, ['fecha', 'local', 'visitante']);
+    const conPartidos = new Set(rows.map(r => r.fecha)).size;
+    setSource(`<i class="fa-solid fa-satellite-dish"></i> ESPN: ${dias.length === 1 ? 'jornada del ' + esc(desde) : esc(desde) + ' a ' + esc(dias[dias.length - 1])}`);
+    espnLog(`${rows.length} partidos en ${conPartidos} ${conPartidos === 1 ? 'jornada' : 'jornadas'}.`);
+    if (hasta > dias[dias.length - 1]) espnLog('Solo se trajeron los primeros 14 días del rango.', 'info');
+    if (missing.size) espnLog(`Estos equipos no están creados en tu base: ${esc([...missing].join(', '))}. Créalos primero en "Equipos".`, 'bad');
+  } catch (e) { console.error(e); espnLog(esc(e.message), 'bad'); }
+  finally { idle(btn); }
+});
+</script>
+</body>
+</html>
