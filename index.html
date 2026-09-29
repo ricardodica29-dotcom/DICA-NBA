@@ -266,8 +266,8 @@ table.log td.hl{font-weight:800}
 <section id="expired" class="screen hidden">
   <div class="expired">
     <div class="ico"><i class="fa-solid fa-lock"></i></div>
-    <h2>TU ACCESO VENCIÓ</h2>
-    <p>Tu suscripción a DICA NBA terminó. Escríbeme para renovarla y seguir viendo las proyecciones de cada jornada.</p>
+    <h2 id="expired-title">TU ACCESO VENCIÓ</h2>
+    <p id="expired-text">Tu suscripción a DICA NBA terminó. Escríbeme para renovarla y seguir viendo las proyecciones de cada jornada.</p>
     <a class="btn btn-wa" id="wa-link" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp"></i> Escribir por WhatsApp</a>
     <p style="color:var(--muted);font-size:12px;margin-top:8px">+52 729 881 2937</p>
     <button class="linkish" id="expired-logout">Cerrar sesión</button>
@@ -564,15 +564,29 @@ if (CONFIG_OK) {
   onAuthStateChanged(auth, async (user) => {
     if (!user) { show('login'); return; }
     const email = (user.email || '').toLowerCase();
-    try {
-      const acc = await getDoc(doc(db, 'acceso_usuarios', email));
-      const vence = acc.exists() ? acc.data().vence : null;
-      if (vence && vence < new Date().toISOString().slice(0, 10)) { show('expired'); return; }
-    } catch (e) { console.error('Error revisando vencimiento:', e); }
+    // El admin siempre entra. Los demás necesitan alta en acceso_usuarios con fecha vigente
+    // (las reglas de Firestore aplican exactamente lo mismo del lado del servidor).
+    try { isAdmin = (await getDoc(doc(db, 'admins_importador', email))).exists(); } catch { isAdmin = false; }
+    if (!isAdmin) {
+      let vence = null;
+      try {
+        const acc = await getDoc(doc(db, 'acceso_usuarios', email));
+        vence = acc.exists() ? acc.data().vence : null;
+      } catch (e) { console.error('Error revisando acceso:', e); }
+      const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+      if (!vence || vence < hoy) {
+        $('expired-title').textContent = vence ? 'TU ACCESO VENCIÓ' : 'SIN ACCESO ACTIVO';
+        $('expired-text').textContent = vence
+          ? 'Tu suscripción a DICA NBA terminó. Escríbeme para renovarla y seguir viendo las proyecciones de cada jornada.'
+          : 'Tu cuenta todavía no tiene una suscripción activa a DICA NBA. Escríbeme para activarla.';
+        show('expired');
+        return;
+      }
+    }
+    $('picks-generate').classList.toggle('hidden', !isAdmin);
     show('app');
     await loadTeams();
     loadIndice();
-    checkIfAdmin(email);
   });
 }
 $('login-form').addEventListener('submit', async (e) => {
@@ -1202,11 +1216,6 @@ function renderPlayerProj() {
 // =========================================================
 let isAdmin = false;
 let currentPicks = [], picksFilter = 'all', picksLoadedFor = null;
-
-async function checkIfAdmin(email) {
-  try { isAdmin = (await getDoc(doc(db, 'admins_importador', email))).exists(); } catch { isAdmin = false; }
-  $('picks-generate').classList.toggle('hidden', !isAdmin);
-}
 
 async function loadPicks(force) {
   const f = J.fecha;

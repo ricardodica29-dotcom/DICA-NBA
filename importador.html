@@ -228,7 +228,7 @@ td{padding:8px 10px;border-top:1px solid var(--line-soft)}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, writeBatch, arrayUnion } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, writeBatch, arrayUnion, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // MISMA CONFIGURACIÓN QUE DICA_NBA.html (proyecto Firebase de NBA)
 const firebaseConfig = {
@@ -688,15 +688,20 @@ async function savePartidos(recs, log) {
 }
 
 async function saveUsuarios(recs, log) {
-  const batch = writeBatch(db); let n = 0;
+  const batch = writeBatch(db); let n = 0; const malas = [];
   recs.forEach(r => {
     if (!r.correo || !r.vence) return;
-    batch.set(doc(db, 'acceso_usuarios', r.correo.trim().toLowerCase()), { vence: normalizeFecha(r.vence) }, { merge: true });
+    const vence = normalizeFecha(r.vence);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(vence)) { malas.push(r.correo); return; }
+    // vence_ts = fin de ese día en hora de México; las reglas de Firestore lo comparan con la hora actual
+    const vence_ts = Timestamp.fromDate(new Date(`${vence}T23:59:59-06:00`));
+    batch.set(doc(db, 'acceso_usuarios', r.correo.trim().toLowerCase()), { vence, vence_ts }, { merge: true });
     n++;
   });
   if (!n) throw new Error('Ninguna fila válida (revisa correo y fecha).');
   await batch.commit();
   log(`${n} fechas de vencimiento guardadas.`);
+  if (malas.length) log(`Fecha no reconocida (usa AAAA-MM-DD o DD/MM/AAAA): ${esc(malas.join(', '))}.`, 'info');
 }
 
 $('upload-btn').addEventListener('click', async () => {
