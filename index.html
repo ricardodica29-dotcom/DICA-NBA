@@ -214,6 +214,23 @@ table.log td.hl{font-weight:800}
 .line-out span{display:block;font-size:11px;color:var(--muted)}
 .line-out b{font-family:var(--display);font-weight:400;font-size:22px}
 
+/* Lesiones */
+.inj{border-top:1px solid var(--line-soft);padding:12px 14px;background:var(--paper)}
+.inj-h{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--display);font-size:16px;letter-spacing:.5px;margin-bottom:8px}
+.inj-h small{font-family:var(--body);font-size:11px;color:var(--muted);letter-spacing:0;white-space:nowrap}
+.inj-team{display:flex;gap:10px;align-items:flex-start;padding:6px 0}
+.inj-team+.inj-team{border-top:1px dashed var(--line-soft)}
+.inj-list{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0}
+.ib{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:3px 8px;border-radius:3px;background:var(--paper-2);border:1px solid var(--line)}
+.ib i{font-style:normal;font-weight:700;font-size:10px;padding:1px 5px;border-radius:2px;color:#fff}
+.ib.out i{background:var(--loss)} .ib.doubt i{background:#b3261e;opacity:.8} .ib.q i{background:var(--warn)} .ib.prob i{background:var(--faint)}
+.inj-none{font-size:12px;color:var(--muted)}
+.adj{font-size:12px;color:var(--ink-2);margin-top:8px;background:var(--paper-2);border-radius:3px;padding:8px 10px}
+.inj-alert{display:flex;gap:10px;align-items:flex-start;border-radius:4px;padding:12px 14px;margin:12px 0 0;font-size:14px;color:#fff}
+.inj-alert.out{background:var(--loss)} .inj-alert.q{background:var(--warn)}
+.inj-alert b{display:block;font-size:15px}
+.tier.inj{background:var(--warn);color:#fff;margin-left:4px}
+
 /* Picks */
 .pick{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:12px 14px}
 .pick+.pick{margin-top:8px}
@@ -786,6 +803,104 @@ function projectGame(SL, SA) {
   };
 }
 
+
+// =========================================================
+// LESIONES: reporte oficial de ESPN (se consulta en vivo, no gasta lecturas de Firebase)
+// =========================================================
+const INJ_TTL = 10 * 60 * 1000;   // se vuelve a consultar cada 10 minutos
+let injCache = { at: 0, data: null, err: false };
+const BODY_ES = { knee: 'rodilla', ankle: 'tobillo', hamstring: 'isquiotibial', foot: 'pie', back: 'espalda', hip: 'cadera', calf: 'pantorrilla',
+  shoulder: 'hombro', wrist: 'muñeca', hand: 'mano', achilles: 'Aquiles', illness: 'enfermedad', rest: 'descanso', concussion: 'conmoción',
+  groin: 'ingle', thigh: 'muslo', toe: 'dedo del pie', finger: 'dedo', thumb: 'pulgar', elbow: 'codo', personal: 'motivos personales',
+  quadriceps: 'cuádriceps', quad: 'cuádriceps', abdomen: 'abdomen', oblique: 'oblicuo', neck: 'cuello', face: 'cara', nose: 'nariz', eye: 'ojo',
+  head: 'cabeza', chest: 'pecho', rib: 'costilla', leg: 'pierna', 'lower leg': 'pierna', shin: 'espinilla', heel: 'talón', plantar: 'fascia plantar',
+  suspension: 'suspensión', 'not injury related': 'no es lesión', undisclosed: 'no revelada', 'g league': 'Liga G' };
+const INJ_LABEL = { out: 'Fuera', doubt: 'Duda', q: 'En duda', prob: 'Probable' };
+function injCat(e) {
+  const s = String(e.status || e.type?.description || e.type?.name || '').toLowerCase();
+  if (s.includes('out') || s.includes('suspen')) return 'out';
+  if (s.includes('doubt')) return 'doubt';
+  if (s.includes('prob')) return 'prob';
+  return 'q';
+}
+function injWhat(e) {
+  const t = String(e.details?.type || '').toLowerCase();
+  if (!t) return '';
+  return BODY_ES[t] || e.details.type;
+}
+const athleteIdOf = a => {
+  if (a?.id) return String(a.id);
+  for (const l of a?.links || []) { const m = String(l.href || '').match(/\/id\/(\d+)/); if (m) return m[1]; }
+  const u = String(a?.uid || '').match(/a:(\d+)/); return u ? u[1] : '';
+};
+function ourTeamByEspn(espnId, abbr) {
+  const id = Object.keys(cache.teamMeta).find(k => String(cache.teamMeta[k].espn_id) === String(espnId));
+  if (id) return id;
+  const ab = ABBR_ALIAS[String(abbr || '').toUpperCase()] || String(abbr || '').toUpperCase();
+  return Object.keys(cache.teamMeta).find(k => teamAbbr(k) === ab) || null;
+}
+async function getInjuries() {
+  if (injCache.data && Date.now() - injCache.at < INJ_TTL) return injCache.data;
+  try {
+    const r = await fetch('https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries');
+    if (!r.ok) throw new Error('ESPN ' + r.status);
+    const d = await r.json();
+    const out = {};
+    (d.injuries || []).forEach(t => {
+      (t.injuries || []).forEach(e => {
+        const a = e.athlete || {};
+        const tid = ourTeamByEspn(a.team?.id ?? t.id, a.team?.abbreviation ?? t.abbreviation);
+        if (!tid) return;
+        (out[tid] = out[tid] || []).push({ eid: athleteIdOf(a), name: a.displayName || `${a.firstName || ''} ${a.lastName || ''}`.trim(),
+          cat: injCat(e), what: injWhat(e), date: e.date || '' });
+      });
+    });
+    const order = { out: 0, doubt: 1, q: 2, prob: 3 };
+    Object.values(out).forEach(l => l.sort((x, y) => order[x.cat] - order[y.cat]));
+    injCache = { at: Date.now(), data: out, err: false };
+    return out;
+  } catch (e) {
+    console.warn('Reporte de lesiones no disponible', e);
+    injCache = { at: Date.now() - INJ_TTL + 60000, data: injCache.data, err: true };   // reintenta en 1 minuto
+    return injCache.data;
+  }
+}
+const normN = t => String(t ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[.'’]/g, '').replace(/\b(jr|sr|ii|iii|iv)\b/g, '').replace(/\s+/g, ' ').trim();
+function injuryFor(inj, teamId, player) {
+  const list = (inj && inj[teamId]) || [];
+  const eid = String(player?.espn_id || '');
+  return list.find(x => (eid && x.eid === eid) || normN(x.name) === normN(player?.nombre)) || null;
+}
+function injuryByName(inj, teamId, nombre, eid) {
+  return injuryFor(inj, teamId, { nombre, espn_id: eid });
+}
+
+// Ajuste del marcador por bajas: solo jugadores "Fuera" de la rotación.
+// Ofensiva: el equipo pierde ~20% de los puntos y ~15% de las asistencias del jugador (el resto lo absorben sus compañeros).
+// Defensiva: el rival gana medio punto por cada robo + tapón que ya no estarán, más un poco por rebotes.
+async function injuryAdjust(teamId, rivalId, inj) {
+  const out = ((inj && inj[teamId]) || []).filter(x => x.cat === 'out');
+  if (!out.length) return { off: 0, def: 0, players: [] };
+  const [roster, own, riv] = await Promise.all([getRoster(teamId), getSummary(teamId), getSummary(rivalId)]);
+  const js = roster?.jugadores || {};
+  let off = 0, def = 0; const players = [];
+  out.forEach(x => {
+    const pid = Object.keys(js).find(k => (x.eid && String(js[k].espn_id || '') === x.eid) || normN(js[k].nombre) === normN(x.name));
+    if (!pid) return;
+    const P = projectPlayer(js[pid], own, riv);
+    if (!P || P.stats.min.proj < 12) return;   // fuera de la rotación: no mueve el marcador
+    const st = P.stats;
+    const o = 0.20 * st.pts.proj + 0.15 * st.ast.proj;
+    const d = 0.5 * (st.stl.proj + st.blk.proj) + 0.05 * st.reb.proj;
+    off += o; def += d; players.push({ name: js[pid].nombre, pts: o + d });
+  });
+  return { off: Math.min(off, 9), def: Math.min(def, 3), players };
+}
+function injBadges(list) {
+  if (!list.length) return '<span class="inj-none">Sin bajas reportadas</span>';
+  return list.map(x => `<span class="ib ${x.cat}"><i>${INJ_LABEL[x.cat].toUpperCase()}</i>${esc(x.name)}${x.what ? ` · ${esc(x.what)}` : ''}</span>`).join('');
+}
+
 // =========================================================
 // TAB EQUIPOS
 // =========================================================
@@ -904,14 +1019,33 @@ async function runVegas(L, A) {
   const out = $('vegas-out');
   out.innerHTML = loaderHTML;
   try {
-    const [sL, sA] = await Promise.all([getSummary(L), getSummary(A)]);
+    const [sL, sA, inj] = await Promise.all([getSummary(L), getSummary(A), getInjuries()]);
     if (!sL || !sA) { out.innerHTML = noteHTML(`${esc(teamName(!sL ? L : A))} todavía no tiene partidos capturados.`, 'warn'); return; }
-    renderVegas(L, A, sL, sA, projectGame(sL, sA));
+    const p = projectGame(sL, sA);
+    let adjL = { off: 0, def: 0, players: [] }, adjA = { off: 0, def: 0, players: [] };
+    if (inj) {
+      try { [adjL, adjA] = await Promise.all([injuryAdjust(L, A, inj), injuryAdjust(A, L, inj)]); } catch (e) { console.warn(e); }
+      p.ptsL += -adjL.off + adjA.def;
+      p.ptsA += -adjA.off + adjL.def;
+      p.pL = normCdf((p.ptsL - p.ptsA) / MARGIN_SD);
+    }
+    p.inj = inj; p.adjL = adjL; p.adjA = adjA;
+    renderVegas(L, A, sL, sA, p);
     setTimeout(() => out.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   } catch (err) {
     console.error(err);
     out.innerHTML = noteHTML('Error al procesar el modelo.', 'bad');
   }
+}
+
+function injBlockHTML(L, A, p) {
+  if (!p.inj) return `<div class="inj"><div class="inj-h">LESIONES</div><span class="inj-none">No se pudo consultar el reporte de lesiones de ESPN en este momento. Revísalo antes de decidir.</span></div>`;
+  const row = id => `<div class="inj-team">${tileHTML(id, 'xs')}<div class="inj-list">${injBadges(p.inj[id] || [])}</div></div>`;
+  const adjTxt = (id, a) => a.players.length ? `${esc(teamAbbr(id))} sin ${a.players.map(x => esc(x.name)).join(', ')}` : '';
+  const adj = [adjTxt(A, p.adjA), adjTxt(L, p.adjL)].filter(Boolean);
+  return `<div class="inj"><div class="inj-h">LESIONES <small>ESPN · ${new Date(injCache.at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</small></div>
+    ${row(A)}${row(L)}
+    ${adj.length ? `<div class="adj"><b>Marcador ajustado por bajas:</b> ${adj.join(' · ')}.</div>` : ''}</div>`;
 }
 
 function renderVegas(L, A, sL, sA, p) {
@@ -959,11 +1093,13 @@ function renderVegas(L, A, sL, sA, p) {
       <div><span>Total (O/U)</span><b>${half(p.ptsL + p.ptsA)}</b></div>
       <div><span>Línea (spread)</span><b>${esc(spread)}</b></div>
     </div>
+    ${injBlockHTML(L, A, p)}
   </div>
 
-  <div class="section-t">COMPARATIVA PROYECTADA</div>
+  <div class="section-t">PROYECCIÓN ESTIMADA DEL PARTIDO</div>
+  <p class="disclaimer" style="margin:-4px 0 10px">Lo que se espera que haga cada equipo en este partido: combina lo que cada uno suele hacer con lo que su rival suele permitir, ajustado al ritmo del juego. En negro, quién lleva ventaja. Sus promedios reales están en la pestaña Equipos.</p>
   <div class="panel tape">
-    <div class="tape-head"><span>${esc(teamAbbr(A))}</span><span>Estadística</span><span>${esc(teamAbbr(L))}</span></div>
+    <div class="tape-head"><span>${esc(teamAbbr(A))}</span><span>Estimado</span><span>${esc(teamAbbr(L))}</span></div>
     ${tape.map(([lbl, loc, vis, dir]) => {
       const both = loc != null && vis != null;
       const leadVis = both && (dir > 0 ? vis > loc : vis < loc);
@@ -1162,15 +1298,27 @@ $('jug-player').addEventListener('change', (e) => {
 
 function currentPlayer() { return cache.rosters[jug.teamId]?.jugadores?.[jug.playerId] || null; }
 
+function injAlertHTML(x) {
+  if (!x || x.cat === 'prob') return x ? `<div class="note" style="margin-top:12px">Aparece como <b>probable</b> en el reporte de lesiones${x.what ? ` (${esc(x.what)})` : ''}.</div>` : '';
+  const out = x.cat === 'out';
+  return `<div class="inj-alert ${out ? 'out' : 'q'}"><i class="fa-solid fa-kit-medical" style="margin-top:3px"></i><div><b>${out ? 'FUERA DEL PARTIDO' : 'EN DUDA PARA JUGAR'}</b>${x.what ? `Lesión: ${esc(x.what)}. ` : ''}${out ? 'No debería jugar; la proyección es solo de referencia.' : 'Confirma si juega antes de decidir.'}</div></div>`;
+}
+async function renderPlayerInjury() {
+  const p = currentPlayer(); if (!p) return;
+  const inj = await getInjuries();
+  const box = $('jug-inj'); if (!box || currentPlayer() !== p) return;
+  box.innerHTML = inj ? injAlertHTML(injuryFor(inj, jug.teamId, p)) : '';
+}
 function renderPlayer() {
   const p = currentPlayer(); if (!p) return;
+  setTimeout(renderPlayerInjury, 0);
   const games = playerGames(p);
   const bio = [p.posicion, p.dorsal ? '#' + p.dorsal : '', p.estatura, p.edad ? p.edad + ' años' : ''].filter(Boolean).map(esc).join(' · ');
   let html = `
     <div class="ident fade-in" style="margin-top:18px">
       ${avatarHTML(p.nombre, jug.teamId)}
       <div><h3>${esc(String(p.nombre).toUpperCase())}</h3><p>${esc(teamName(jug.teamId))}${bio ? ' · ' + bio : ''}</p></div>
-    </div>`;
+    </div><div id="jug-inj"></div>`;
   if (!games.length) {
     if (hasHistory(p)) {
       $('jug-body').innerHTML = html + noteHTML('Aún no tiene partidos de temporada regular. La proyección se apoya en su historial previo.');
@@ -1235,6 +1383,7 @@ $('jug-calc-btn').addEventListener('click', async () => {
 
 function renderPlayerProj() {
   const P = jug.proj; const k = jug.focus; const st = P.stats[k];
+  const p = currentPlayer();
   const keys = ['pts', 'reb', 'ast', 'fg3m', 'pra', 'pr', 'pa', 'ra', 'stl', 'blk', 'sb', 'min'];
   const floor = Math.max(0, st.proj - st.sd), ceil = st.proj + st.sd;
   const hi = Math.max(ceil * 1.25, Math.max(...st.ser) || 1, 1);
@@ -1249,8 +1398,9 @@ function renderPlayerProj() {
       <div><span>Últimos ${l10.length}</span><b>${l10.length ? `${l10.filter(v => v > line).length}/${l10.length}` : '–'}</b></div>
       <div><span>Temporada</span><b>${st.ser.length ? `${st.ser.filter(v => v > line).length}/${st.ser.length}` : '–'}</b></div></div>`;
   }
-  const p = currentPlayer();
+  const injX = injCache.data ? injuryFor(injCache.data, jug.teamId, p) : null;
   $('jug-proj-out').innerHTML = `
+    ${injX && (injX.cat === 'out' || injX.cat === 'doubt' || injX.cat === 'q') ? injAlertHTML(injX) : ''}
     <div class="chips fade-in">${keys.map(x => `<button class="chip ${x === k ? 'on' : ''}" data-k="${x}"><span>${SHORT[x]}</span><b>${f1(P.stats[x].proj)}</b></button>`).join('')}</div>
     <div class="focus fade-in">
       <div class="focus-top">
@@ -1304,6 +1454,7 @@ async function loadPicks(force) {
 
 function showPicks(picks, at) {
   currentPicks = picks; picksFilter = 'all';
+  getInjuries().then(() => { if (currentPicks === picks) renderPicks(); });
   if (at) { $('picks-stamp').textContent = 'Actualizado el ' + new Date(at).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }); $('picks-stamp').classList.remove('hidden'); }
   renderPicks();
 }
@@ -1317,14 +1468,19 @@ function renderPicks() {
   fl.innerHTML = present.map(k => `<button data-k="${k}" class="${picksFilter === k ? 'on' : ''}">${k === 'all' ? 'Todos' : SHORT[k]}</button>`).join('');
   fl.classList.remove('hidden');
   fl.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { picksFilter = b.dataset.k; renderPicks(); }));
-  const list = currentPicks.filter(p => picksFilter === 'all' || p.field === picksFilter);
-  out.innerHTML = list.map(p => `
+  const inj = injCache.data;
+  const injOf = p => inj ? injuryByName(inj, teamIdByAbbr(p.equipo), p.nombre, p.eid) : null;
+  const shown = currentPicks.filter(p => { const x = injOf(p); return !(x && x.cat === 'out'); });
+  const hidden = currentPicks.length - shown.length;
+  const list = shown.filter(p => picksFilter === 'all' || p.field === picksFilter);
+  const head = hidden ? noteHTML(`Se quitaron ${hidden} picks de jugadores reportados como <b>fuera</b> en el reporte de lesiones de ESPN.`) + '<div style="height:10px"></div>' : '';
+  out.innerHTML = head + list.map(p => `
     <div class="pick fade-in">
       ${avatarHTML(p.nombre, teamIdByAbbr(p.equipo), 'sm')}
       <div>
         <div class="who">${esc(p.nombre)}</div>
         <div class="ctx">${esc(LABEL[p.field] || p.field)} · ${esc(p.equipo)} vs ${esc(p.rival)}</div>
-        <span class="tier ${p.tier === 'Muy constante' ? 't1' : 't2'}">${esc(p.tier)}</span>
+        <span class="tier ${p.tier === 'Muy constante' ? 't1' : 't2'}">${esc(p.tier)}</span>${(() => { const x = injOf(p); return x && x.cat !== 'prob' ? `<span class="tier inj">${INJ_LABEL[x.cat]}</span>` : ''; })()}
       </div>
       <div class="val"><b>${f1(p.projected)}</b><span>Piso ${f1(p.floor)}</span>${p.of ? `<span>Lo superó ${p.hits}/${p.of}</span>` : ''}</div>
     </div>`).join('');
@@ -1338,7 +1494,7 @@ $('picks-generate').addEventListener('click', async () => {
   busy(btn, 'ANALIZANDO JUGADORES…');
   $('picks-out').innerHTML = '';
   try {
-    const juegos = await getJornada(fecha);
+    const [juegos, injG] = await Promise.all([getJornada(fecha), getInjuries()]);
     if (!juegos.length) { $('picks-out').innerHTML = noteHTML('Esa jornada no tiene partidos. Súbelos en el importador (modo "Partidos del día").', 'warn'); return; }
     const rivalOf = {};
     juegos.forEach(g => { rivalOf[g.local] = g.visitante; rivalOf[g.visitante] = g.local; });
@@ -1348,6 +1504,8 @@ $('picks-generate').addEventListener('click', async () => {
       const js = roster?.jugadores || {};
       for (const pid of Object.keys(js)) {
         const pl = js[pid];
+        const xi = injG ? injuryFor(injG, teamId, pl) : null;
+        if (xi && (xi.cat === 'out' || xi.cat === 'doubt')) continue;   // fuera o muy en duda: no entra a picks
         const P = projectPlayer(pl, own, riv);
         if (!P || (P.n < 5 && !(pl.previa && pl.previa.n >= 20))) continue;   // pocos partidos: solo si tiene temporada pasada sólida
         if (P.stats.min.proj < 22) continue;   // solo rotación real
@@ -1360,7 +1518,7 @@ $('picks-generate').addEventListener('click', async () => {
           const floor = Math.floor(Math.max(0, st.proj - st.sd) * 2) / 2;
           const l10 = st.ser.slice(-10);
           picks.push({
-            nombre: pl.nombre || pid, equipo: teamAbbr(teamId), rival: teamAbbr(rivalOf[teamId]),
+            nombre: pl.nombre || pid, eid: pl.espn_id ? String(pl.espn_id) : '', equipo: teamAbbr(teamId), rival: teamAbbr(rivalOf[teamId]),
             field: k, projected: Math.round(st.proj * 10) / 10, floor,
             hits: l10.filter(v => v >= floor).length, of: l10.length, tier
           });
