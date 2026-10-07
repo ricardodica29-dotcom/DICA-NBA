@@ -110,6 +110,16 @@ td{padding:8px 10px;border-top:1px solid var(--line-soft)}
 .log div{display:flex;gap:8px;padding:4px 0}
 .log .ok{color:var(--win)} .log .bad{color:var(--loss)} .log .info{color:var(--warn)}
 .log i{margin-top:3px}
+.chips-row{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 14px}
+.chips-row button{padding:7px 12px;border:1px solid var(--line);background:var(--bg-2);border-radius:999px;font-size:13px;font-weight:600;color:var(--muted)}
+.chips-row button:hover{border-color:var(--text);color:var(--text)}
+.ulist{margin-top:12px;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.urow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:10px 12px;border-top:1px solid var(--line-soft);font-size:14px;background:var(--panel)}
+.urow:first-child{border-top:0}
+.urow .mail{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.urow .st{font-size:12px;font-weight:700;padding:2px 8px;border-radius:3px;white-space:nowrap}
+.st.ok{background:var(--win);color:#fff}.st.soon{background:var(--warn);color:#fff}.st.off{background:var(--loss);color:#fff}
+.urow .edit{font-size:13px;font-weight:600;color:var(--blue);text-decoration:underline}
 </style>
 </head>
 <body>
@@ -146,6 +156,7 @@ td{padding:8px 10px;border-top:1px solid var(--line-soft)}
       <button class="mode" data-mode="team-stats"><i class="fa-solid fa-chart-line"></i>Stats de equipo</button>
       <button class="mode" data-mode="partidos"><i class="fa-solid fa-calendar-day"></i>Partidos del día</button>
       <button class="mode" data-mode="usuarios"><i class="fa-solid fa-hourglass-half"></i>Vencimientos</button>
+      <button class="mode" data-mode="previo"><i class="fa-solid fa-clock-rotate-left"></i>Historial previo</button>
     </div>
 
     <!-- EQUIPO -->
@@ -189,6 +200,38 @@ td{padding:8px 10px;border-top:1px solid var(--line-soft)}
       <div class="log" id="espn-log"></div>
     </div>
 
+    <!-- ALTA MANUAL DE USUARIOS -->
+    <div class="panel hidden" id="user-card" style="border-left:4px solid var(--red)">
+      <div class="panel-h"><span class="n"><i class="fa-solid fa-user-plus" style="font-size:17px"></i></span><div><h2>Dar acceso a un usuario</h2><p>Escribe su correo y hasta cuándo tiene acceso.</p></div></div>
+      <div class="field"><label class="lbl" for="u-mail">Correo del usuario</label><input class="input" id="u-mail" type="email" placeholder="cliente@gmail.com" autocomplete="off"></div>
+      <div class="field"><label class="lbl" for="u-date">Vence el</label><input class="input" id="u-date" type="date"></div>
+      <div class="chips-row" id="u-chips">
+        <button type="button" data-add="7">+1 semana</button>
+        <button type="button" data-add="30">+1 mes</button>
+        <button type="button" data-add="90">+3 meses</button>
+        <button type="button" data-end="06-30">Toda la temporada</button>
+      </div>
+      <button class="btn btn-primary" id="u-save">Guardar acceso</button>
+      <div class="log" id="u-log"></div>
+      <p class="hint" style="margin-top:14px;margin-bottom:8px">Recuerda: también debes crear su cuenta en Firebase &gt; Authentication con el mismo correo. Si ya tiene acceso, guardar la nueva fecha lo renueva.</p>
+      <button class="btn btn-blue" id="u-list-btn"><i class="fa-solid fa-users"></i> Ver mis usuarios</button>
+      <div id="u-list"></div>
+    </div>
+
+    <!-- HISTORIAL PREVIO (oculto para usuarios) -->
+    <div class="panel hidden" id="prev-card" style="border-left:4px solid var(--red)">
+      <div class="panel-h"><span class="n"><i class="fa-solid fa-clock-rotate-left" style="font-size:17px"></i></span><div><h2>Historial previo</h2><p>Solo lo usa el modelo para arrancar la temporada afinado. Tus usuarios no ven estos partidos.</p></div></div>
+      <div class="grid3">
+        <div><label class="lbl" for="prev-season">Temporada pasada</label><input class="input sm" id="prev-season" type="number"></div>
+        <div><label class="lbl" for="pre-season">Temporada actual</label><input class="input sm" id="pre-season" type="number"></div>
+      </div>
+      <p class="hint">Antes de usar esto, carga Equipos y los Rosters de esta temporada. La temporada 2025-26 se escribe 2026 y la 2026-27, 2027.</p>
+      <button class="btn btn-blue" id="prev-btn" style="margin-bottom:10px"><i class="fa-solid fa-box-archive"></i> 1. Cargar temporada pasada (30 equipos)</button>
+      <button class="btn btn-blue" id="pre-btn"><i class="fa-solid fa-person-running"></i> 2. Cargar pretemporada (30 equipos)</button>
+      <p class="hint" style="margin-top:12px;margin-bottom:0">El paso 1 se hace una sola vez y tarda varios minutos. El paso 2 puedes repetirlo cada pocos días mientras dure la pretemporada. No cierres esta pestaña mientras carga.</p>
+      <div class="log" id="prev-log"></div>
+    </div>
+
     <!-- ARCHIVO -->
     <div class="panel" id="file-card">
       <div class="panel-h"><span class="n" id="n-file">2</span><h2>Archivo CSV o Excel</h2></div>
@@ -228,7 +271,7 @@ td{padding:8px 10px;border-top:1px solid var(--line-soft)}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, writeBatch, arrayUnion, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, writeBatch, arrayUnion, Timestamp, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // MISMA CONFIGURACIÓN QUE DICA_NBA.html (proyecto Firebase de NBA)
 const firebaseConfig = {
@@ -324,7 +367,8 @@ const MODES = {
   'player-stats': { fields: PLAYER_STAT_FIELDS, pk: 'nombre', team: true, espn: 'games', rowLabel: 'filas', hint: 'Una fila por jugador y partido. Puede incluir muchas fechas en el mismo archivo.', up: 'Guardar estadísticas de jugadores', replace: 'Sobrescribir partidos que ya existían (en vez de solo completar los campos incluidos).' },
   'team-stats':   { fields: TEAM_STAT_FIELDS, pk: 'fecha', team: true, espn: 'games', rowLabel: 'partidos', hint: 'Una fila por partido del equipo elegido. Incluye las columnas "en contra" para que el modelo mida defensa y ritmo.', up: 'Guardar estadísticas del equipo', replace: 'Sobrescribir partidos que ya existían (en vez de solo completar los campos incluidos).' },
   'partidos':     { fields: PARTIDOS_FIELDS, pk: 'fecha', team: false, espn: 'day', rowLabel: 'partidos', hint: 'Una fila por partido: fecha, local y visitante. Usa el nombre o la abreviatura del equipo.', up: 'Guardar partidos', replace: 'Reemplazar los partidos de esa fecha si ya existían.' },
-  'usuarios':     { fields: USUARIOS_FIELDS, pk: 'correo', team: false, espn: null, rowLabel: 'usuarios', hint: 'Una fila por usuario: el correo con el que entra y la fecha en que vence su acceso.', up: 'Guardar vencimientos', replace: null },
+  'usuarios':     { fields: USUARIOS_FIELDS, pk: 'correo', team: false, espn: null, rowLabel: 'usuarios', hint: 'Opcional, para dar de alta a muchos usuarios a la vez: una fila por usuario con su correo y la fecha en que vence su acceso.', up: 'Guardar vencimientos', replace: null },
+  'previo':       { fields: [], pk: 'x', team: false, espn: null, special: true, rowLabel: '', hint: '', up: '', replace: null },
 };
 
 let mode = 'equipos';
@@ -440,6 +484,9 @@ function applyMode() {
   document.querySelectorAll('.mode').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   $('team-card').classList.toggle('hidden', !c.team);
   $('espn-card').classList.toggle('hidden', !c.espn);
+  $('prev-card').classList.toggle('hidden', !c.special);
+  $('user-card').classList.toggle('hidden', mode !== 'usuarios');
+  $('file-card').classList.toggle('hidden', !!c.special);
   ['teams', 'roster', 'games', 'day'].forEach(k => $('espn-' + k).classList.toggle('hidden', c.espn !== k));
   $('espn-log').innerHTML = '';
   $('step-hint').textContent = c.hint;
@@ -931,6 +978,236 @@ $('espn-day-btn').addEventListener('click', async () => {
   } catch (e) { console.error(e); espnLog(esc(e.message), 'bad'); }
   finally { idle(btn); }
 });
+
+// =========================================================
+// HISTORIAL PREVIO: temporada pasada (resumen) + pretemporada (partidos)
+// Se guarda en campos separados ("previa" y "pre") que la app de usuarios
+// nunca muestra; solo los usa el modelo de proyección.
+// =========================================================
+const prevLog = logger($('prev-log'));
+$('prev-season').value = Number($('espn-season').value) - 1;
+$('pre-season').value = $('espn-season').value;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function espnRetry(url, tries = 3) {
+  for (let i = 0; i < tries; i++) {
+    try { return await espnJson(url); } catch (e) { if (i === tries - 1) throw e; await sleep(800 * (i + 1)); }
+  }
+}
+async function runPool(items, size, fn, onTick) {
+  let i = 0, done = 0;
+  const worker = async () => { while (i < items.length) { const it = items[i++]; try { await fn(it); } catch (e) { console.warn(e); } done++; onTick && onTick(done); } };
+  await Promise.all(Array.from({ length: Math.min(size, items.length) }, worker));
+}
+function ourTeams() {
+  return Object.keys(teamList).map(id => ({ id, espn: espnIdFor(id) })).filter(t => t.espn);
+}
+async function collectEvents(teams, season, stype, btn) {
+  const events = new Map(); let k = 0;
+  await runPool(teams, 4, async t => {
+    const d = await espnRetry(`${ESPN}/teams/${t.espn}/schedule?season=${season}&seasontype=${stype}`);
+    (d.events || []).filter(e => e.competitions?.[0]?.status?.type?.completed).forEach(e => {
+      if (events.has(e.id)) return;
+      const comp = e.competitions[0].competitors.map(c => ({ espn: Number(c.id ?? c.team?.id), homeAway: c.homeAway, abbr: c.team?.abbreviation || c.team?.displayName || '' }));
+      events.set(e.id, { id: e.id, fecha: etDate(e.date), comp });
+    });
+  }, n => { btn.innerHTML = `<span class="spin"></span> Calendarios ${n} de ${teams.length}`; });
+  return [...events.values()];
+}
+const P_SUM_KEYS = ['min', 'pts', 'reb', 'ast', 'fg3m', 'stl', 'blk', 'tov'];
+const P_COMBOS = { pra: ['pts', 'reb', 'ast'], pr: ['pts', 'reb'], pa: ['pts', 'ast'], ra: ['reb', 'ast'], sb: ['stl', 'blk'] };
+const avgOf = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+const sdOf = a => { if (a.length < 2) return 0; const m = avgOf(a); return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / (a.length - 1)); };
+const r1 = v => Math.round(v * 100) / 100;
+function possOfRec(g, suf = '') {
+  const fga = g['fga' + suf], tov = g['tov' + suf], fta = g['fta' + suf];
+  if (fga == null || tov == null || fta == null) return null;
+  return fga - (g['oreb' + suf] || 0) + tov + 0.44 * fta;
+}
+function summarizeTeam(recs, season) {
+  const out = { temporada: Number(season), n: recs.length, avg: {}, allowed: {} };
+  T_STATS.forEach(([k]) => {
+    out.avg[k] = r1(avgOf(recs.map(g => g[k]).filter(v => v != null)));
+    out.allowed[k] = r1(avgOf(recs.map(g => g[k + '_allowed']).filter(v => v != null)));
+  });
+  const pf = recs.map(g => g.pts), pa = recs.map(g => g.pts_allowed);
+  out.ptsAvg = r1(avgOf(pf)); out.ptsAgAvg = r1(avgOf(pa)); out.ptsSd = r1(sdOf(pf));
+  let po = 0, pp = 0, ao = 0, ap = 0; const paces = [];
+  recs.forEach(g => { const a = possOfRec(g), b = possOfRec(g, '_allowed');
+    if (a != null) { po += a; pp += g.pts; } if (b != null) { ao += b; ap += g.pts_allowed; }
+    if (a != null && b != null) paces.push((a + b) / 2); });
+  out.pace = paces.length ? r1(avgOf(paces)) : null;
+  out.ortg = po ? r1(pp / po * 100) : null;
+  out.drtg = ao ? r1(ap / ao * 100) : null;
+  return out;
+}
+function summarizePlayer(lines, season) {
+  const out = { temporada: Number(season), n: lines.length, avg: {}, sd: {} };
+  P_SUM_KEYS.forEach(k => { const a = lines.map(l => l[k] || 0); out.avg[k] = r1(avgOf(a)); out.sd[k] = r1(sdOf(a)); });
+  Object.keys(P_COMBOS).forEach(k => { const a = lines.map(l => P_COMBOS[k].reduce((s, c) => s + (l[c] || 0), 0)); out.avg[k] = r1(avgOf(a)); out.sd[k] = r1(sdOf(a)); });
+  return out;
+}
+function gameRec(s, us, them, comp, fecha) {
+  const a = teamTotals(s, us), b = teamTotals(s, them);
+  if (!a.ok) return null;
+  const me = comp.find(c => c.espn === us), op = comp.find(c => c.espn === them);
+  const rec = { rival: NBA_BY_ESPN[them]?.abrev || op?.abbr || '', sede: me?.homeAway === 'home' ? 'L' : 'V', pts: a.tot.pts };
+  T_STATS.forEach(([k]) => { rec[k] = a.tot[k]; });
+  if (b.ok) { rec.pts_allowed = b.tot.pts; T_STATS.forEach(([k]) => { rec[k + '_allowed'] = b.tot[k]; }); }
+  return { rec, lines: a.lines };
+}
+// Escribe en cada roster lo que corresponda a sus jugadores (por ID de ESPN o por nombre)
+async function writeToRosters(teams, byAthlete, field, mergeMaps, log) {
+  const nameIdx = {};
+  Object.keys(byAthlete).forEach(aid => { nameIdx[normName(byAthlete[aid].name)] = aid; });
+  let matched = 0, without = 0, sinRoster = 0;
+  for (const t of teams) {
+    const ref = doc(db, 'rosters', t.id);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) { sinRoster++; continue; }
+    const data = snap.data(); const js = data.jugadores || {};
+    let changed = false;
+    Object.keys(js).forEach(pid => {
+      const pl = js[pid];
+      const aid = (pl.espn_id && byAthlete[String(pl.espn_id)]) ? String(pl.espn_id) : nameIdx[normName(pl.nombre)];
+      if (!aid) { without++; return; }
+      const val = byAthlete[aid].value;
+      pl[field] = mergeMaps ? { ...(pl[field] || {}), ...val } : val;
+      matched++; changed = true;
+    });
+    if (changed) { checkSize(data, `El roster de ${teamList[t.id].nombre}`); await setDoc(ref, data); }
+  }
+  log(`${matched} jugadores actualizados.${without ? ` ${without} sin datos (novatos o sin partidos en ese periodo).` : ''}`);
+  if (sinRoster) log(`${sinRoster} equipos no tienen roster cargado y se saltaron. Cárgalos en "Rosters" y repite este paso.`, 'info');
+}
+
+$('prev-btn').addEventListener('click', async () => {
+  const season = $('prev-season').value; if (!season) return alert('Escribe la temporada pasada.');
+  const teams = ourTeams(); if (!teams.length) return alert('Primero carga los equipos (modo "Equipos").');
+  if (!confirm(`Se van a leer todos los partidos de la temporada ${season} desde ESPN. Tarda varios minutos. ¿Continuar?`)) return;
+  const btn = $('prev-btn'); busy(btn, 'Preparando…'); $('prev-log').innerHTML = '';
+  try {
+    const events = await collectEvents(teams, season, 2, btn);
+    if (!events.length) throw new Error(`ESPN no tiene partidos de la temporada ${season}.`);
+    prevLog(`${events.length} partidos encontrados. Leyendo box scores…`, 'info');
+    const ourEspn = new Set(teams.map(t => t.espn));
+    const teamRecs = {}, players = {}; let fallidos = 0;
+    await runPool(events, 6, async ev => {
+      let s;
+      try { s = await espnRetry(`${ESPN}/summary?event=${ev.id}`); } catch { fallidos++; return; }
+      ev.comp.forEach(c => {
+        if (!ourEspn.has(c.espn)) return;
+        const op = ev.comp.find(x => x !== c); if (!op) return;
+        const g = gameRec(s, c.espn, op.espn, ev.comp, ev.fecha); if (!g || g.rec.pts_allowed == null) return;
+        (teamRecs[c.espn] = teamRecs[c.espn] || []).push(g.rec);
+        g.lines.forEach(l => { if (!l.espnId) return; const P = players[l.espnId] = players[l.espnId] || { name: l.name, lines: [] }; P.lines.push(l); });
+      });
+    }, n => { btn.innerHTML = `<span class="spin"></span> Partidos ${n} de ${events.length}`; });
+    btn.innerHTML = '<span class="spin"></span> Guardando…';
+    const batch = writeBatch(db); let nt = 0;
+    teams.forEach(t => { const recs = teamRecs[t.espn]; if (!recs?.length) return;
+      batch.set(doc(db, 'equipos', t.id), { previa: summarizeTeam(recs, season) }, { merge: true }); nt++; });
+    await batch.commit();
+    prevLog(`${nt} equipos con resumen de la temporada ${season}.`);
+    const byAthlete = {};
+    Object.keys(players).forEach(aid => { const P = players[aid]; if (P.lines.length >= 3) byAthlete[aid] = { name: P.name, value: summarizePlayer(P.lines, season) }; });
+    await writeToRosters(teams, byAthlete, 'previa', false, prevLog);
+    if (fallidos) prevLog(`${fallidos} partidos no se pudieron leer de ESPN; no afecta el resumen.`, 'info');
+    prevLog('Temporada pasada lista.', 'ok');
+  } catch (e) { console.error(e); prevLog('No se completó: ' + esc(e.message), 'bad'); }
+  finally { idle(btn); }
+});
+
+$('pre-btn').addEventListener('click', async () => {
+  const season = $('pre-season').value; if (!season) return alert('Escribe la temporada actual.');
+  const teams = ourTeams(); if (!teams.length) return alert('Primero carga los equipos (modo "Equipos").');
+  const btn = $('pre-btn'); busy(btn, 'Preparando…'); $('prev-log').innerHTML = '';
+  try {
+    const events = await collectEvents(teams, season, 1, btn);
+    if (!events.length) throw new Error('ESPN todavía no tiene partidos de pretemporada terminados.');
+    prevLog(`${events.length} partidos de pretemporada encontrados. Leyendo box scores…`, 'info');
+    const byEspn = Object.fromEntries(teams.map(t => [t.espn, t.id]));
+    const teamPre = {}, players = {}; let fallidos = 0;
+    await runPool(events, 6, async ev => {
+      let s;
+      try { s = await espnRetry(`${ESPN}/summary?event=${ev.id}`); } catch { fallidos++; return; }
+      ev.comp.forEach(c => {
+        const tid = byEspn[c.espn]; if (!tid) return;
+        const op = ev.comp.find(x => x !== c); if (!op) return;
+        const g = gameRec(s, c.espn, op.espn, ev.comp, ev.fecha); if (!g) return;
+        (teamPre[tid] = teamPre[tid] || {})[ev.fecha] = g.rec;
+        g.lines.forEach(l => { if (!l.espnId) return;
+          const P = players[l.espnId] = players[l.espnId] || { name: l.name, value: {} };
+          P.value[ev.fecha] = { min: l.min, pts: l.pts, reb: l.reb, ast: l.ast, fg3m: l.fg3m, stl: l.stl, blk: l.blk, tov: l.tov, rival: g.rec.rival, sede: g.rec.sede }; });
+      });
+    }, n => { btn.innerHTML = `<span class="spin"></span> Partidos ${n} de ${events.length}`; });
+    btn.innerHTML = '<span class="spin"></span> Guardando…';
+    const batch = writeBatch(db); let nt = 0;
+    Object.keys(teamPre).forEach(tid => { batch.set(doc(db, 'equipos', tid), { pre: teamPre[tid] }, { merge: true }); nt++; });
+    await batch.commit();
+    prevLog(`Pretemporada guardada para ${nt} equipos.`);
+    await writeToRosters(teams, players, 'pre', true, prevLog);
+    if (fallidos) prevLog(`${fallidos} partidos no se pudieron leer de ESPN; vuelve a correr este paso más tarde.`, 'info');
+    prevLog('Pretemporada lista.', 'ok');
+  } catch (e) { console.error(e); prevLog('No se completó: ' + esc(e.message), 'bad'); }
+  finally { idle(btn); }
+});
+
+// =========================================================
+// ALTA MANUAL DE USUARIOS
+// =========================================================
+const uLog = logger($('u-log'));
+const isoDate = d => d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+function addDaysIso(base, n) { const [y, m, d] = base.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); }
+$('u-chips').querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+  const hoy = isoDate(new Date());
+  const cur = $('u-date').value && $('u-date').value > hoy ? $('u-date').value : hoy;
+  if (b.dataset.add) $('u-date').value = addDaysIso(cur, Number(b.dataset.add));
+  else { const y = new Date().getMonth() >= 6 ? new Date().getFullYear() + 1 : new Date().getFullYear(); $('u-date').value = `${y}-${b.dataset.end}`; }
+}));
+async function saveOneUser(correo, vence) {
+  const vence_ts = Timestamp.fromDate(new Date(`${vence}T23:59:59-06:00`));
+  await setDoc(doc(db, 'acceso_usuarios', correo), { vence, vence_ts }, { merge: true });
+}
+$('u-save').addEventListener('click', async () => {
+  const correo = $('u-mail').value.trim().toLowerCase();
+  const vence = $('u-date').value;
+  $('u-log').innerHTML = '';
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) { uLog('Escribe un correo válido.', 'bad'); return; }
+  if (!vence) { uLog('Elige la fecha de vencimiento.', 'bad'); return; }
+  const btn = $('u-save'); busy(btn, 'Guardando…');
+  try {
+    await saveOneUser(correo, vence);
+    const [y, m, d] = vence.split('-').map(Number);
+    const bonita = new Date(y, m - 1, d).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+    uLog(`Acceso guardado: ${esc(correo)} hasta el ${esc(bonita)}.`);
+    $('u-mail').value = ''; $('u-date').value = '';
+    if ($('u-list').innerHTML) loadUsers();
+  } catch (e) { console.error(e); uLog('No se guardó: ' + esc(e.message), 'bad'); }
+  finally { idle(btn); }
+});
+async function loadUsers() {
+  const box = $('u-list');
+  box.innerHTML = '<p class="small">Cargando…</p>';
+  try {
+    const snap = await getDocs(collection(db, 'acceso_usuarios'));
+    const hoy = isoDate(new Date()), pronto = addDaysIso(hoy, 7);
+    const rows = snap.docs.map(d => ({ correo: d.id, vence: d.data().vence || '', ok: !!d.data().vence_ts }))
+      .sort((a, b) => a.vence.localeCompare(b.vence));
+    if (!rows.length) { box.innerHTML = '<p class="small">Todavía no hay usuarios dados de alta.</p>'; return; }
+    box.innerHTML = `<div class="ulist">${rows.map(r => {
+      const st = !r.vence || r.vence < hoy ? ['off', 'Vencido'] : r.vence <= pronto ? ['soon', 'Vence pronto'] : ['ok', 'Activo'];
+      const [y, m, d] = (r.vence || '0-0-0').split('-').map(Number);
+      const f = r.vence ? new Date(y, m - 1, d).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }) : 'sin fecha';
+      return `<div class="urow"><span class="mail">${esc(r.correo)}<br><small style="font-weight:500;color:var(--muted)">${esc(f)}${r.ok ? '' : ' · vuelve a guardarlo'}</small></span>
+        <span class="st ${st[0]}">${st[1]}</span><button class="edit" data-mail="${esc(r.correo)}">Renovar</button></div>`;
+    }).join('')}</div><p class="small">${rows.length} usuarios. Ver esta lista gasta una lectura por usuario.</p>`;
+    box.querySelectorAll('.edit').forEach(b => b.addEventListener('click', () => {
+      $('u-mail').value = b.dataset.mail; $('u-date').value = '';
+      $('u-mail').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('u-date').focus();
+    }));
+  } catch (e) { console.error(e); box.innerHTML = '<p class="small" style="color:var(--loss)">No se pudo cargar la lista: ' + esc(e.message) + '</p>'; }
+}
+$('u-list-btn').addEventListener('click', loadUsers);
 </script>
 </body>
 </html>

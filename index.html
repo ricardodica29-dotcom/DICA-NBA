@@ -677,8 +677,7 @@ function possOf(g, suf = '') {
   return fga - (num(g['oreb' + suf]) || 0) + tov + 0.44 * fta;
 }
 
-function teamSummary(teamDoc) {
-  const games = gamesOf(teamDoc?.juegos);
+function rawSummary(games) {
   if (!games.length) return null;
   const s = { n: games.length, games, avg: {}, allowed: {} };
   TEAM_KEYS.forEach(k => {
@@ -710,6 +709,48 @@ function teamSummary(teamDoc) {
   return s;
 }
 
+// Resumen que ve el usuario (solo temporada regular) + "eff": valores que usa el modelo,
+// mezclando temporada regular con el historial previo oculto (temporada pasada y pretemporada).
+const LG_EXTRA = { ftm: 17.0, ptsSd: 11 };
+function teamSummary(teamDoc) {
+  const reg = rawSummary(gamesOf(teamDoc?.juegos));
+  const pre = rawSummary(gamesOf(teamDoc?.pre));
+  const prev = teamDoc?.previa && teamDoc.previa.n ? teamDoc.previa : null;
+  if (!reg && !pre && !prev) return null;
+  const s = reg || { n: 0, games: [], avg: {}, allowed: {}, ptsFor: [], ptsAg: [], ptsAvg: null, ptsAgAvg: null, ptsSd: 0,
+    results: [], wins: 0, losses: 0, pace: null, nPace: 0, ortg: null, nPo: 0, drtg: null, nPa: 0 };
+  s.eff = buildEff(s, pre, prev);
+  s.early = !!prev && s.n < 15;
+  return s;
+}
+function buildEff(reg, pre, prev) {
+  const prevW = prev ? 8 * Math.min(1, prev.n / 40) : 0;
+  const preW = pre ? Math.min(pre.n, 6) * 0.35 : 0;
+  const lgW = prev ? 1 : 6;
+  const mix = (regV, regN, prevV, preV, lg) => {
+    let num = lg * lgW, den = lgW;
+    if (prevV != null && prevW) { num += (lg + 0.75 * (prevV - lg)) * prevW; den += prevW; }  // los rosters cambian: 25% hacia el promedio
+    if (preV != null && preW) { num += preV * preW; den += preW; }
+    if (regV != null && regN) { num += regV * regN; den += regN; }
+    return num / den;
+  };
+  const e = { avg: {}, allowed: {} };
+  e.pace = mix(reg.pace, reg.nPace, prev?.pace, pre?.pace, LEAGUE.pace);
+  e.ortg = mix(reg.ortg, reg.nPo, prev?.ortg, pre?.ortg, LEAGUE.ortg);
+  e.drtg = mix(reg.drtg, reg.nPa, prev?.drtg, pre?.drtg, LEAGUE.ortg);
+  e.ptsAvg = mix(reg.ptsAvg, reg.ptsFor.length, prev?.ptsAvg, pre?.ptsAvg, LEAGUE.pts);
+  e.ptsAgAvg = mix(reg.ptsAgAvg, reg.ptsAg.length, prev?.ptsAgAvg, pre?.ptsAgAvg, LEAGUE.pts);
+  e.ptsSd = mix(reg.ptsFor.length > 2 ? reg.ptsSd : null, reg.ptsFor.length, prev?.ptsSd, null, LG_EXTRA.ptsSd);
+  TEAM_KEYS.forEach(k => {
+    const lg = LEAGUE[k] ?? LG_EXTRA[k];
+    e.avg[k] = mix(reg.avg[k], reg.n, prev?.avg?.[k], pre?.avg?.[k], lg);
+    e.allowed[k] = mix(reg.allowed[k], reg.n, prev?.allowed?.[k], pre?.allowed?.[k], lg);
+  });
+  e.n = reg.n + prevW + preW + lgW;
+  e.nPa = e.n;
+  return e;
+}
+
 // Proyección de estadísticas de equipo: tasa por posesión propia (50%)
 // + lo que el rival permite por posesión (50%), multiplicado por el ritmo esperado del partido.
 function teamStatProj(own, riv, pace) {
@@ -731,36 +772,19 @@ function teamStatProj(own, riv, pace) {
   return out;
 }
 
-function projectGame(L, A) {
-  const K = 8; // "8 partidos" de peso hacia el promedio de liga (evita sobrerreaccionar con pocos datos)
-  const hasRtg = [L.ortg, L.drtg, A.ortg, A.drtg, L.pace, A.pace].every(v => v != null);
-  let ptsL, ptsA, pace = null, method;
-  if (hasRtg) {
-    const paceL = shrink(L.pace, LEAGUE.pace, L.nPace, K), paceA = shrink(A.pace, LEAGUE.pace, A.nPace, K);
-    pace = paceL * paceA / LEAGUE.pace;
-    const oL = shrink(L.ortg, LEAGUE.ortg, L.nPo, K), dL = shrink(L.drtg, LEAGUE.ortg, L.nPa, K);
-    const oA = shrink(A.ortg, LEAGUE.ortg, A.nPo, K), dA = shrink(A.drtg, LEAGUE.ortg, A.nPa, K);
-    ptsL = (oL * dA / LEAGUE.ortg) * pace / 100;
-    ptsA = (oA * dL / LEAGUE.ortg) * pace / 100;
-    method = 'Ritmo y eficiencia';
-  } else {
-    const n = Math.max(1, Math.min(L.ptsFor.length, A.ptsFor.length));
-    const rawL = 0.5 * (L.ptsAvg ?? LEAGUE.pts) + 0.5 * (A.ptsAgAvg ?? L.ptsAvg ?? LEAGUE.pts);
-    const rawA = 0.5 * (A.ptsAvg ?? LEAGUE.pts) + 0.5 * (L.ptsAgAvg ?? A.ptsAvg ?? LEAGUE.pts);
-    ptsL = shrink(rawL, LEAGUE.pts, n, K);
-    ptsA = shrink(rawA, LEAGUE.pts, n, K);
-    method = 'Solo puntos';
-  }
+function projectGame(SL, SA) {
+  const L = SL.eff, A = SA.eff;   // valores ya mezclados con el historial previo y el promedio de liga
+  const pace = L.pace * A.pace / LEAGUE.pace;
+  let ptsL = (L.ortg * A.drtg / LEAGUE.ortg) * pace / 100;
+  let ptsA = (A.ortg * L.drtg / LEAGUE.ortg) * pace / 100;
   ptsL += HOME_EDGE / 2; ptsA -= HOME_EDGE / 2;
-  const sdL = clamp(shrink(L.ptsSd || 11, 11, L.ptsFor.length, 6), 7, 16);
-  const sdA = clamp(shrink(A.ptsSd || 11, 11, A.ptsFor.length, 6), 7, 16);
+  const sdL = clamp(L.ptsSd, 7, 16), sdA = clamp(A.ptsSd, 7, 16);
   return {
-    ptsL, ptsA, pace, method, sdL, sdA,
+    ptsL, ptsA, pace, method: 'Ritmo y eficiencia', sdL, sdA, early: SL.early || SA.early,
     pL: normCdf((ptsL - ptsA) / MARGIN_SD),
     statsL: teamStatProj(L, A, pace), statsA: teamStatProj(A, L, pace)
   };
 }
-
 
 // =========================================================
 // TAB EQUIPOS
@@ -773,7 +797,7 @@ $('team-selector').addEventListener('change', async (e) => {
   $('stats-body').innerHTML = loaderHTML;
   try {
     const s = await getSummary(id);
-    if (!s) { $('stats-body').innerHTML = noteHTML('Este equipo todavía no tiene partidos capturados.', 'warn'); return; }
+    if (!s || !s.n) { $('stats-body').innerHTML = noteHTML('Este equipo todavía no tiene partidos de temporada regular capturados.', 'warn'); renderNextGameOnly(id); return; }
     renderStats(s);
   } catch (err) {
     console.error(err);
@@ -781,6 +805,10 @@ $('team-selector').addEventListener('change', async (e) => {
   }
 });
 
+function renderNextGameOnly(id) {
+  $('stats-body').insertAdjacentHTML('afterbegin', `<div class="ident fade-in">${tileHTML(id)}<div><h3>${esc(teamName(id).toUpperCase())}</h3><p>Sin partidos de temporada regular todavía</p></div></div><div id="next-game" class="next-game hidden"></div>`);
+  renderNextGame(id);
+}
 function renderNextGame(id) {
   const box = $('next-game'); if (!box) return;
   const g = (cache.jornadas[J.fecha] || []).find(x => x.local === id || x.visitante === id);
@@ -943,7 +971,7 @@ function renderVegas(L, A, sL, sA, p) {
       return `<div class="tape-row"><b class="${leadVis ? 'lead' : ''}">${f1(vis)}</b><span>${lbl}</span><b class="${leadLoc ? 'lead' : ''}">${f1(loc)}</b></div>`;
     }).join('')}
   </div>
-  <p class="disclaimer">Modelo: ${esc(p.method.toLowerCase())}. Basado en ${sA.n} partidos de ${esc(teamName(A))} y ${sL.n} de ${esc(teamName(L))}. Con pocos partidos los ratings se acercan al promedio de la liga, y el local recibe ${HOME_EDGE} puntos de ventaja en el margen. No considera lesiones ni descansos: revísalos antes de decidir.</p>`;
+  <p class="disclaimer">Modelo: ${esc(p.method.toLowerCase())}. ${sA.n + sL.n ? `Basado en ${sA.n} partidos de ${esc(teamName(A))} y ${sL.n} de ${esc(teamName(L))}${p.early ? ', combinados con el historial previo de cada equipo mientras avanza la temporada' : ''}` : 'Aún sin partidos de temporada regular: basado en el historial previo de cada equipo'}. Con pocos partidos los ratings se acercan al promedio de la liga, y el local recibe ${HOME_EDGE} puntos de ventaja en el margen. No considera lesiones ni descansos: revísalos antes de decidir.</p>`;
 }
 // =========================================================
 // MOTOR ESTADÍSTICO — JUGADORES
@@ -987,24 +1015,54 @@ function seriesOf(games, k) {
   return games.map(g => num(g[k]) || 0);
 }
 
+function prePlayerGames(p) {
+  return gamesOf(p?.pre).filter(g => (num(g.min) ?? 0) > 0);
+}
+function hasHistory(p) { return !!((p?.previa && p.previa.n) || prePlayerGames(p).length); }
+
+// Valor "previo" de una estadística: temporada pasada + pretemporada (por minuto) + referencia base
+function playerPrior(p, k) {
+  const prev = p?.previa && p.previa.n >= 5 ? p.previa : null;
+  const pre = prePlayerGames(p);
+  const parts = [];
+  if (prev && prev.avg?.[k] != null) parts.push([prev.avg[k], 6 * Math.min(1, prev.n / 25)]);
+  if (pre.length) {
+    const preMin = mean(pre.map(g => num(g.min) || 0));
+    const expMin = prev?.avg?.min ?? preMin * 1.1;     // en pretemporada los titulares juegan menos
+    const w = Math.min(pre.length, 6) * 0.35;
+    if (k === 'min') parts.push([expMin, w]);
+    else { const tot = pre.reduce((a, g) => a + (num(g.min) || 0), 0); const v = pre.reduce((a, g) => a + (num(g[k]) || 0), 0);
+      if (tot > 0) parts.push([v / tot * expMin, w]); }
+  }
+  parts.push([P_BASE[k], prev ? 0.5 : 2]);
+  const W = parts.reduce((a, x) => a + x[1], 0);
+  const sd = prev?.sd?.[k] ?? P_BASE[k] * 0.45;
+  return { v: parts.reduce((a, x) => a + x[0] * x[1], 0) / W, w: W, sd };
+}
+
 function projectPlayer(p, own, riv) {
   const games = playerGames(p);
   const n = games.length;
-  if (!n) return null;
+  if (!n && !hasHistory(p)) return null;
+  const O = own?.eff, R = riv?.eff;
   let paceF = 1;
-  if (own?.pace && riv?.pace) paceF = clamp((own.pace * riv.pace / LEAGUE.pace) / own.pace, 0.94, 1.06);
-  const res = { n, games, stats: {} };
+  if (O?.pace && R?.pace) paceF = clamp((O.pace * R.pace / LEAGUE.pace) / O.pace, 0.94, 1.06);
+  const res = { n, games, early: n < 10 && hasHistory(p), stats: {} };
   P_KEYS.forEach(k => {
     const ser = seriesOf(games, k);
-    const season = mean(ser), last10 = mean(ser.slice(-10));
-    let base = n >= 10 ? 0.55 * season + 0.45 * last10 : season;   // forma reciente pesa 45%
-    base = shrink(base, P_BASE[k], n, 2);
-    const f = k === 'min' ? 1 : defFactor(k, riv) * paceF;
-    res.stats[k] = { proj: base * f, sd: stdev(ser) * f, season, last10, ser };
+    const season = n ? mean(ser) : 0, last10 = n ? mean(ser.slice(-10)) : 0;
+    const regBase = n >= 10 ? 0.55 * season + 0.45 * last10 : season;   // forma reciente pesa 45%
+    const pr = playerPrior(p, k);
+    const base = (regBase * n + pr.v * pr.w) / (n + pr.w);
+    const sdRaw = n >= 8 ? stdev(ser) : (stdev(ser) * n + pr.sd * 6) / (n + 6);
+    const f = k === 'min' ? 1 : defFactor(k, R) * paceF;
+    res.stats[k] = { proj: base * f, sd: sdRaw * f, season, last10, ser };
   });
   Object.keys(COMBOS).forEach(k => {
     const ser = seriesOf(games, k);
-    res.stats[k] = { proj: COMBOS[k].reduce((a, c) => a + res.stats[c].proj, 0), sd: stdev(ser), season: mean(ser), last10: mean(ser.slice(-10)), ser };
+    const prSd = p?.previa?.sd?.[k] ?? Math.sqrt(COMBOS[k].reduce((a, c) => a + res.stats[c].sd ** 2, 0)) * 1.2;
+    const sd = n >= 8 ? stdev(ser) : (stdev(ser) * n + prSd * 6) / (n + 6);
+    res.stats[k] = { proj: COMBOS[k].reduce((a, c) => a + res.stats[c].proj, 0), sd, season: n ? mean(ser) : 0, last10: n ? mean(ser.slice(-10)) : 0, ser };
   });
   return res;
 }
@@ -1084,11 +1142,11 @@ async function selectTeam(teamId, rivalId) {
   try {
     const r = await getRoster(teamId);
     const js = r?.jugadores || {};
-    const list = Object.keys(js).map(pid => ({ id: pid, ...js[pid], gp: playerGames(js[pid]).length }))
-      .sort((a, b) => (b.gp - a.gp) || String(a.nombre).localeCompare(String(b.nombre)));
+    const list = Object.keys(js).map(pid => ({ id: pid, ...js[pid], gp: playerGames(js[pid]).length, pm: js[pid].previa?.avg?.min || 0 }))
+      .sort((a, b) => (b.gp - a.gp) || (b.pm - a.pm) || String(a.nombre).localeCompare(String(b.nombre)));
     if (!list.length) { sel.innerHTML = '<option value="">Este equipo no tiene roster cargado</option>'; return; }
     sel.innerHTML = '<option value="" disabled selected>Elige un jugador…</option>' +
-      list.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}${p.posicion ? ` (${esc(p.posicion)})` : ''}${p.gp ? '' : ' · sin partidos'}</option>`).join('');
+      list.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}${p.posicion ? ` (${esc(p.posicion)})` : ''}${p.gp || hasHistory(p) ? '' : ' · sin partidos'}</option>`).join('');
     sel.disabled = false;
   } catch (err) {
     console.error(err);
@@ -1114,8 +1172,14 @@ function renderPlayer() {
       <div><h3>${esc(String(p.nombre).toUpperCase())}</h3><p>${esc(teamName(jug.teamId))}${bio ? ' · ' + bio : ''}</p></div>
     </div>`;
   if (!games.length) {
-    $('jug-body').innerHTML = html + noteHTML('Este jugador no tiene partidos capturados todavía.', 'warn');
-    $('jug-proj-wrap').classList.add('hidden');
+    if (hasHistory(p)) {
+      $('jug-body').innerHTML = html + noteHTML('Aún no tiene partidos de temporada regular. La proyección se apoya en su historial previo.');
+      $('jug-proj-wrap').classList.remove('hidden');
+      updateProjButton();
+    } else {
+      $('jug-body').innerHTML = html + noteHTML('Este jugador no tiene partidos capturados todavía.', 'warn');
+      $('jug-proj-wrap').classList.add('hidden');
+    }
     return;
   }
   const cells = ['pts', 'reb', 'ast', 'fg3m', 'min', 'stl', 'blk', 'tov'].map(k => {
@@ -1182,8 +1246,8 @@ function renderPlayerProj() {
     const l10 = st.ser.slice(-10);
     lineHTML = `<div class="line-out">
       <div><span>Más de ${line}</span><b style="color:${pOver >= 0.5 ? 'var(--win)' : 'var(--loss)'}">${Math.round(pOver * 100)}%</b></div>
-      <div><span>Últimos ${l10.length}</span><b>${l10.filter(v => v > line).length}/${l10.length}</b></div>
-      <div><span>Temporada</span><b>${st.ser.filter(v => v > line).length}/${st.ser.length}</b></div></div>`;
+      <div><span>Últimos ${l10.length}</span><b>${l10.length ? `${l10.filter(v => v > line).length}/${l10.length}` : '–'}</b></div>
+      <div><span>Temporada</span><b>${st.ser.length ? `${st.ser.filter(v => v > line).length}/${st.ser.length}` : '–'}</b></div></div>`;
   }
   const p = currentPlayer();
   $('jug-proj-out').innerHTML = `
@@ -1197,14 +1261,14 @@ function renderPlayerProj() {
           <div class="mk" style="left:${pct(st.proj)}%"></div>
           ${line != null ? `<div class="ln" style="left:${pct(line)}%"></div>` : ''}
         </div>
-        <div class="range-l"><span>Piso ${f1(floor)}</span><span>Temp. ${f1(st.season)} · últ. 10 ${f1(st.last10)}</span><span>Techo ${f1(ceil)}</span></div>
+        <div class="range-l"><span>Piso ${f1(floor)}</span><span>${P.n ? `Temp. ${f1(st.season)} · últ. 10 ${f1(st.last10)}` : 'Según historial previo'}</span><span>Techo ${f1(ceil)}</span></div>
       </div>
       <div class="line-box">
         <input class="input" id="line-in" inputmode="decimal" placeholder="Línea, ej. ${half(st.proj)}" value="${esc(jug.line || '')}" aria-label="Línea de la casa de apuestas">
         ${lineHTML}
       </div>
     </div>
-    <p class="disclaimer">Promedio de ${P.n} partidos (la forma reciente pesa 45%), ajustado por la defensa y el ritmo del rival. Escribe la línea de tu casa de apuestas para ver la probabilidad estimada y cuántas veces la superó. Revisa lesiones y minutos antes de decidir.</p>`;
+    <p class="disclaimer">${P.n ? `Promedio de ${P.n} partidos` : 'Sin partidos de temporada regular todavía'}${P.early ? ', combinado con su historial previo' : ''} (la forma reciente pesa 45%), ajustado por la defensa y el ritmo del rival. Escribe la línea de tu casa de apuestas para ver la probabilidad estimada y cuántas veces la superó. Revisa lesiones y minutos antes de decidir.</p>`;
   $('jug-proj-out').querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => { jug.focus = c.dataset.k; jug.line = ''; renderPlayerProj(); }));
   const inp = $('line-in');
   inp.addEventListener('change', () => { jug.line = inp.value.replace(',', '.'); renderPlayerProj(); });
@@ -1262,7 +1326,7 @@ function renderPicks() {
         <div class="ctx">${esc(LABEL[p.field] || p.field)} · ${esc(p.equipo)} vs ${esc(p.rival)}</div>
         <span class="tier ${p.tier === 'Muy constante' ? 't1' : 't2'}">${esc(p.tier)}</span>
       </div>
-      <div class="val"><b>${f1(p.projected)}</b><span>Piso ${f1(p.floor)}</span><span>Lo superó ${p.hits}/${p.of}</span></div>
+      <div class="val"><b>${f1(p.projected)}</b><span>Piso ${f1(p.floor)}</span>${p.of ? `<span>Lo superó ${p.hits}/${p.of}</span>` : ''}</div>
     </div>`).join('');
 }
 
@@ -1285,12 +1349,12 @@ $('picks-generate').addEventListener('click', async () => {
       for (const pid of Object.keys(js)) {
         const pl = js[pid];
         const P = projectPlayer(pl, own, riv);
-        if (!P || P.n < 5) continue;
-        if (mean(P.stats.min.ser.slice(-10)) < 22) continue;   // solo rotación real
+        if (!P || (P.n < 5 && !(pl.previa && pl.previa.n >= 20))) continue;   // pocos partidos: solo si tiene temporada pasada sólida
+        if (P.stats.min.proj < 22) continue;   // solo rotación real
         Object.keys(PICK_RULES).forEach(k => {
           const rule = PICK_RULES[k], st = P.stats[k];
-          if (st.season < rule.min) return;
-          const cv = st.sd / st.season;
+          if (st.proj < rule.min) return;
+          const cv = st.sd / st.proj;
           const tier = cv <= rule.t1 ? 'Muy constante' : cv <= rule.t2 ? 'Constante' : null;
           if (!tier) return;
           const floor = Math.floor(Math.max(0, st.proj - st.sd) * 2) / 2;
@@ -1304,7 +1368,7 @@ $('picks-generate').addEventListener('click', async () => {
       }
     }
     const tierOrder = { 'Muy constante': 0, 'Constante': 1 };
-    picks.sort((a, b) => tierOrder[a.tier] - tierOrder[b.tier] || (b.hits / b.of) - (a.hits / a.of) || b.projected - a.projected);
+    picks.sort((a, b) => tierOrder[a.tier] - tierOrder[b.tier] || ((b.of ? b.hits / b.of : 0.5) - (a.of ? a.hits / a.of : 0.5)) || b.projected - a.projected);
     const top = picks.slice(0, 80);
     const at = new Date().toISOString();
     await setDoc(doc(db, 'picks_dia', fecha), { picks: top, generated_at: at });
