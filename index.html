@@ -239,6 +239,16 @@ table.log td.hl{font-weight:800}
 .tier.inj{background:var(--warn);color:#fff;margin-left:4px}
 .btn-primary.blocked,.btn-primary.blocked:disabled{background:var(--loss);opacity:1;cursor:not-allowed}
 
+/* Foto para redes (solo admin) */
+.share-btn{margin-top:14px;background:var(--ink);color:var(--paper)}
+.share-btn i{color:var(--orange)}
+.shm{position:fixed;inset:0;z-index:200;background:rgba(28,23,18,.82);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:calc(16px + var(--st)) 16px calc(16px + var(--sb));gap:12px}
+.shm img{max-width:100%;max-height:62vh;border-radius:4px;box-shadow:0 10px 40px rgba(0,0,0,.5);background:var(--paper)}
+.shm .seg{background:var(--paper)}
+.shm-act{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:420px}
+.shm-act .btn{height:46px;font-size:17px}
+.shm-close{color:var(--paper);font-size:14px;text-decoration:underline;padding:8px}
+
 /* Picks */
 .pick{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:12px 14px}
 .pick+.pick{margin-top:8px}
@@ -409,6 +419,16 @@ table.log td.hl{font-weight:800}
       <button class="tab" data-tab="picks"><i class="fa-solid fa-star"></i>Picks</button>
     </div>
   </nav>
+</div>
+
+<div id="share-modal" class="shm hidden" role="dialog" aria-modal="true" aria-label="Foto para redes">
+  <div class="seg" id="share-fmt"><button data-f="post" class="on">Post 4:5</button><button data-f="story">Historia 9:16</button></div>
+  <img id="share-img" alt="Vista previa de la imagen para redes">
+  <div class="shm-act">
+    <a class="btn btn-primary" id="share-dl" download="dica-nba.png">DESCARGAR</a>
+    <button class="btn btn-ink" id="share-native" style="background:var(--paper);color:var(--ink)">COMPARTIR</button>
+  </div>
+  <button class="shm-close" id="share-close">Cerrar</button>
 </div>
 
 <script type="module">
@@ -909,6 +929,172 @@ function injBadges(list) {
   return list.map(x => `<span class="ib ${x.cat}"><i>${INJ_LABEL[x.cat].toUpperCase()}</i>${esc(x.name)}${x.what ? ` · ${esc(x.what)}` : ''}</span>`).join('');
 }
 
+
+// =========================================================
+// FOTO PARA REDES (solo administrador): se dibuja en un canvas y se descarga como PNG
+// =========================================================
+const SH = { kind: null, data: null, fmt: 'post', url: null, blob: null };
+const C = { wood: '#efe3cf', wood2: '#e8d9bf', paper: '#fbf6ec', paper2: '#f3eadb', ink: '#1c1712', muted: '#5f5346', faint: '#8a7b69', line: '#d8c7ab', orange: '#c9481a', win: '#2f7d4f', loss: '#b3261e', warn: '#a86a0c' };
+const FD = 'Anton, Impact, sans-serif', FB = 'Archivo, system-ui, sans-serif';
+function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function txt(ctx, t, x, y, { font, color = C.ink, align = 'left', max = 0, base = 'alphabetic' }) {
+  ctx.font = font; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = base;
+  if (max) { let size = parseFloat(font); const rest = font.replace(/^[\d.]+px/, ''); while (ctx.measureText(t).width > max && size > 12) { size -= 2; ctx.font = size + 'px' + rest; } }
+  ctx.fillText(t, x, y);
+}
+function drawLogo(ctx, x, y, s) {
+  const k = s / 100; ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
+  rr(ctx, 0, 0, 100, 100, 22); ctx.fillStyle = C.ink; ctx.fill();
+  ctx.beginPath(); ctx.arc(50, 50, 34, 0, Math.PI * 2); ctx.fillStyle = C.orange; ctx.fill();
+  ctx.strokeStyle = C.ink; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(50, 16); ctx.lineTo(50, 84); ctx.moveTo(16, 50); ctx.lineTo(84, 50); ctx.stroke();
+  ctx.beginPath(); ctx.arc(-7, 50, 41.6, -0.64, 0.64); ctx.stroke();
+  ctx.beginPath(); ctx.arc(107, 50, 41.6, Math.PI - 0.64, Math.PI + 0.64); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(38, 33); ctx.lineTo(50, 33); ctx.arc(50, 50, 17, -Math.PI / 2, Math.PI / 2); ctx.lineTo(38, 67); ctx.closePath();
+  ctx.fillStyle = C.paper; ctx.fill(); ctx.stroke(); ctx.restore();
+}
+function drawTile(ctx, id, x, y, s) {
+  const c = teamColors(id);
+  rr(ctx, x, y, s, s, s * 0.08); ctx.fillStyle = c.bg; ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(x, y + s - s * 0.06, s, s * 0.06);
+  txt(ctx, teamAbbr(id), x + s / 2, y + s / 2 + 2, { font: `${Math.round(s * 0.36)}px ${FD}`, color: c.fg, align: 'center', base: 'middle' });
+}
+function drawFrame(ctx, W, H, dateTxt) {
+  ctx.fillStyle = C.wood; ctx.fillRect(0, 0, W, H);
+  for (let x = 92; x < W; x += 96) { ctx.fillStyle = C.wood2; ctx.fillRect(x, 0, 4, H); }
+  ctx.strokeStyle = 'rgba(28,23,18,.10)'; ctx.lineWidth = 4;   // líneas de cancha
+  ctx.beginPath(); ctx.arc(W / 2, H + 40, 420, Math.PI, 0); ctx.stroke();
+  ctx.strokeRect(W / 2 - 160, H - 380, 320, 400);
+  ctx.fillStyle = C.paper; ctx.fillRect(0, 0, W, 150); ctx.fillStyle = C.orange; ctx.fillRect(0, 150, W, 10);
+  drawLogo(ctx, 56, 30, 92);
+  txt(ctx, 'DICA NBA', 170, 92, { font: `64px ${FD}` });
+  txt(ctx, 'By: Ricardo Dionicio', 172, 128, { font: `600 26px ${FB}`, color: C.muted });
+  if (dateTxt) txt(ctx, dateTxt, W - 56, 105, { font: `600 28px ${FB}`, color: C.muted, align: 'right', max: 360 });
+}
+function drawFooter(ctx, W, H) {
+  ctx.fillStyle = C.ink; ctx.fillRect(0, H - 88, W, 88);
+  txt(ctx, 'PROYECCIÓN ESTIMADA · DICA NBA', W / 2, H - 32, { font: `34px ${FD}`, color: C.paper, align: 'center' });
+}
+function drawGame(ctx, W, H, d) {
+  const { L, A, p } = d;
+  drawFrame(ctx, W, H, d.date);
+  const story = H > 1500;
+  // medidas: la historia (9:16) tiene más aire; el post (4:5) va compacto
+  const M = story
+    ? { y0: 300, t: 76, cardH: 420, rowH: 190, tile: 140, nm: 44, tag: 30, sc: 170, scY: 132, nmY: 64, tagY: 112, gapP: 50, boxH: 130, boxV: 60, rh: 74, hdr: 70, sf: 40 }
+    : { y0: 180, t: 64, cardH: 330, rowH: 150, tile: 110, nm: 40, tag: 28, sc: 136, scY: 106, nmY: 50, tagY: 92, gapP: 30, boxH: 108, boxV: 52, rh: 52, hdr: 56, sf: 34 };
+  txt(ctx, 'PROYECCIÓN DEL PARTIDO', 56, M.y0 + M.t - 6, { font: `${M.t}px ${FD}`, max: W - 112 });
+  const cy = M.y0 + M.t + 26, cw = W - 112;
+  rr(ctx, 56, cy, cw, M.cardH, 10); ctx.fillStyle = C.paper; ctx.fill(); ctx.strokeStyle = C.line; ctx.lineWidth = 2; ctx.stroke();
+  const favL = p.ptsL >= p.ptsA;
+  [[A, 'Visita', p.ptsA, !favL], [L, 'Local', p.ptsL, favL]].forEach(([id, tag, pts, fav], i) => {
+    const ry = cy + (M.rowH - M.tile) / 2 + 5 + i * M.rowH;
+    drawTile(ctx, id, 90, ry, M.tile);
+    txt(ctx, teamName(id), 90 + M.tile + 30, ry + M.nmY, { font: `700 ${M.nm}px ${FB}`, max: 470 });
+    txt(ctx, tag, 92 + M.tile + 30, ry + M.tagY, { font: `500 ${M.tag}px ${FB}`, color: C.muted });
+    txt(ctx, String(Math.round(pts)), W - 90, ry + M.scY, { font: `${M.sc}px ${FD}`, color: fav ? C.ink : C.faint, align: 'right' });
+  });
+  ctx.fillStyle = C.line; ctx.fillRect(90, cy + M.rowH + 5, cw - 68, 2);
+  // probabilidad
+  const pL = Math.round(p.pL * 100), pA = 100 - pL, by = cy + M.cardH + M.gapP;
+  const cL = teamColors(L).bg, cA0 = teamColors(A).bg, cA = cA0.toLowerCase() === cL.toLowerCase() ? C.ink : cA0;
+  ctx.save(); rr(ctx, 56, by, cw, 24, 6); ctx.clip();
+  ctx.fillStyle = cA; ctx.fillRect(56, by, cw * pA / 100, 24); ctx.fillStyle = cL; ctx.fillRect(56 + cw * pA / 100, by, cw * pL / 100 + 1, 24); ctx.restore();
+  txt(ctx, `${pA}% ${teamAbbr(A)}`, 56, by + 70, { font: `46px ${FD}` });
+  txt(ctx, 'PROBABILIDAD DE GANAR', W / 2, by + 64, { font: `600 24px ${FB}`, color: C.muted, align: 'center' });
+  txt(ctx, `${teamAbbr(L)} ${pL}%`, W - 56, by + 70, { font: `46px ${FD}`, align: 'right' });
+  // total y margen
+  const ly = by + 96, half2 = (cw - 20) / 2;
+  const margin = Math.abs(p.ptsL - p.ptsA);
+  const mTxt = margin < 0.25 ? 'PAREJO' : `${teamAbbr(favL ? L : A)} +${half(margin)}`;
+  [['Total de puntos', half(p.ptsL + p.ptsA)], ['Margen proyectado', mTxt]].forEach(([lbl, v], i) => {
+    const x = 56 + i * (half2 + 20);
+    rr(ctx, x, ly, half2, M.boxH, 10); ctx.fillStyle = C.paper; ctx.fill(); ctx.strokeStyle = C.line; ctx.stroke();
+    txt(ctx, lbl, x + 28, ly + 40, { font: `600 24px ${FB}`, color: C.muted });
+    txt(ctx, v, x + 28, ly + M.boxH - 18, { font: `${M.boxV}px ${FD}`, max: half2 - 56 });
+  });
+  // estadísticas clave
+  const rows = [['% de campo', p.statsA.fgpct, p.statsL.fgpct, 1], ['Triples', p.statsA.fg3m, p.statsL.fg3m, 1], ['Rebotes', p.statsA.reb, p.statsL.reb, 1],
+    ['Asistencias', p.statsA.ast, p.statsL.ast, 1], ['Pérdidas', p.statsA.tov, p.statsL.tov, -1]];
+  if (story) rows.push(['Robos', p.statsA.stl, p.statsL.stl, 1], ['Tapones', p.statsA.blk, p.statsL.blk, 1]);
+  const ty = ly + M.boxH + 30, rh = M.rh;
+  rr(ctx, 56, ty, cw, M.hdr + rows.length * rh, 10); ctx.fillStyle = C.paper; ctx.fill(); ctx.strokeStyle = C.line; ctx.stroke();
+  ctx.save(); rr(ctx, 56, ty, cw, M.hdr + 12, 10); ctx.clip(); ctx.fillStyle = C.ink; ctx.fillRect(56, ty, cw, M.hdr); ctx.restore();
+  txt(ctx, teamAbbr(A), 90, ty + M.hdr / 2 + 12, { font: `34px ${FD}`, color: C.paper });
+  txt(ctx, 'ESTIMADO', W / 2, ty + M.hdr / 2 + 9, { font: `600 22px ${FB}`, color: C.line, align: 'center' });
+  txt(ctx, teamAbbr(L), W - 90, ty + M.hdr / 2 + 12, { font: `34px ${FD}`, color: C.paper, align: 'right' });
+  rows.forEach(([lbl, a, l, dir], i) => {
+    const yy = ty + M.hdr + i * rh;
+    if (i) { ctx.fillStyle = '#e6d8c1'; ctx.fillRect(76, yy, cw - 40, 2); }
+    const la = a != null && l != null && (dir > 0 ? a > l : a < l), ll = a != null && l != null && (dir > 0 ? l > a : l < a);
+    txt(ctx, f1(a), 90, yy + rh / 2 + M.sf * 0.36, { font: `${M.sf}px ${FD}`, color: la ? C.ink : C.faint });
+    txt(ctx, lbl, W / 2, yy + rh / 2 + 9, { font: `600 26px ${FB}`, color: C.muted, align: 'center' });
+    txt(ctx, f1(l), W - 90, yy + rh / 2 + M.sf * 0.36, { font: `${M.sf}px ${FD}`, color: ll ? C.ink : C.faint, align: 'right' });
+  });
+  // bajas confirmadas
+  const outs = p.inj ? [A, L].flatMap(id => (p.inj[id] || []).filter(x => x.cat === 'out').map(x => `${x.name} (${teamAbbr(id)})`)) : [];
+  if (outs.length) txt(ctx, 'Bajas: ' + outs.join(' · '), 56, ty + M.hdr + rows.length * rh + 44, { font: `600 26px ${FB}`, color: C.loss, max: cw });
+  drawFooter(ctx, W, H);
+}
+function drawPlayer(ctx, W, H, d) {
+  const { pl, teamId, rivalId, P } = d;
+  drawFrame(ctx, W, H, d.date);
+  const story = H > 1500, y0 = story ? 320 : 210, c = teamColors(teamId);
+  // avatar
+  ctx.beginPath(); ctx.arc(140, y0 + 90, 90, 0, Math.PI * 2); ctx.fillStyle = c.bg; ctx.fill();
+  txt(ctx, initials(pl.nombre), 140, y0 + 96, { font: `72px ${FD}`, color: c.fg, align: 'center', base: 'middle' });
+  txt(ctx, String(pl.nombre).toUpperCase(), 260, y0 + 80, { font: `78px ${FD}`, max: W - 316 });
+  drawTile(ctx, teamId, 262, y0 + 112, 64);
+  txt(ctx, 'vs', 350, y0 + 158, { font: `600 32px ${FB}`, color: C.muted });
+  drawTile(ctx, rivalId, 394, y0 + 112, 64);
+  txt(ctx, teamName(rivalId), 476, y0 + 156, { font: `600 30px ${FB}`, color: C.muted, max: W - 532 });
+  // estadística principal
+  const k = d.focus, my = y0 + 230, cw = W - 112;
+  rr(ctx, 56, my, cw, 280, 10); ctx.fillStyle = C.ink; ctx.fill();
+  txt(ctx, `${LABEL[k].toUpperCase()} PROYECTADOS`, 96, my + 66, { font: `40px ${FD}`, color: C.line, max: cw - 80 });
+  txt(ctx, f1(P.stats[k].proj), 92, my + 236, { font: `190px ${FD}`, color: C.paper });
+  // resto
+  const keys = ['pts', 'reb', 'ast', 'fg3m', 'pra', 'pr', 'pa', 'ra', 'stl'].filter(x => x !== k).slice(0, story ? 8 : 6);
+  const gy = my + 310, gw = (cw - 40) / 3, gh = 150;
+  keys.forEach((x, i) => {
+    const gx = 56 + (i % 3) * (gw + 20), yy = gy + Math.floor(i / 3) * (gh + 20);
+    rr(ctx, gx, yy, gw, gh, 10); ctx.fillStyle = C.paper; ctx.fill(); ctx.strokeStyle = C.line; ctx.lineWidth = 2; ctx.stroke();
+    txt(ctx, SHORT[x], gx + 24, yy + 46, { font: `700 26px ${FB}`, color: C.muted });
+    txt(ctx, f1(P.stats[x].proj), gx + 24, yy + 124, { font: `70px ${FD}` });
+  });
+  drawFooter(ctx, W, H);
+}
+async function renderShare() {
+  const W = 1080, H = SH.fmt === 'story' ? 1920 : 1350;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  try { await Promise.all([document.fonts.load(`64px Anton`), document.fonts.load(`700 40px Archivo`), document.fonts.load(`600 28px Archivo`)]); } catch {}
+  if (SH.kind === 'game') drawGame(ctx, W, H, SH.data); else drawPlayer(ctx, W, H, SH.data);
+  const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+  if (SH.url) URL.revokeObjectURL(SH.url);
+  SH.blob = blob; SH.url = URL.createObjectURL(blob);
+  $('share-img').src = SH.url;
+  const name = SH.kind === 'game' ? `dica-${teamAbbr(SH.data.A)}-${teamAbbr(SH.data.L)}` : `dica-${normN(SH.data.pl.nombre).replace(/ /g, '-')}`;
+  SH.fname = `${name}-${SH.fmt}.png`.toLowerCase();
+  $('share-dl').href = SH.url; $('share-dl').download = SH.fname;
+}
+async function openShare(kind, data) {
+  SH.kind = kind; SH.data = data;
+  $('share-modal').classList.remove('hidden');
+  $('share-img').removeAttribute('src');
+  await renderShare();
+}
+$('share-fmt').querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+  SH.fmt = b.dataset.f; $('share-fmt').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); renderShare();
+}));
+$('share-close').addEventListener('click', () => $('share-modal').classList.add('hidden'));
+$('share-native').addEventListener('click', async () => {
+  const file = new File([SH.blob], SH.fname, { type: 'image/png' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file] }); } catch {} }
+  else $('share-dl').click();
+});
+const fechaFoto = f => f ? fechaLarga(f) : fechaLarga(todayET());
+
 // =========================================================
 // TAB EQUIPOS
 // =========================================================
@@ -1039,6 +1225,8 @@ async function runVegas(L, A) {
     }
     p.inj = inj; p.adjL = adjL; p.adjA = adjA;
     renderVegas(L, A, sL, sA, p);
+    const inJ = (cache.jornadas[J.fecha] || []).some(g => g.local === L && g.visitante === A);
+    if ($('share-game')) $('share-game').addEventListener('click', () => openShare('game', { L, A, p, date: fechaFoto(inJ ? J.fecha : null) }));
     setTimeout(() => out.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   } catch (err) {
     console.error(err);
@@ -1110,6 +1298,7 @@ function renderVegas(L, A, sL, sA, p) {
     </div>
     ${injBlockHTML(L, A, p)}
   </div>
+  ${isAdmin ? '<button class="btn share-btn" id="share-game"><i class="fa-solid fa-camera"></i> GENERAR FOTO PARA REDES</button>' : ''}
 
   <div class="section-t">PROYECCIÓN ESTIMADA DEL PARTIDO</div>
   <p class="disclaimer" style="margin:-4px 0 10px">Lo que se espera que haga cada equipo en este partido: combina lo que cada uno suele hacer con lo que su rival suele permitir, ajustado al ritmo del juego. En negro, quién lleva ventaja. Sus promedios reales están en la pestaña Equipos.</p>
@@ -1436,12 +1625,17 @@ function renderPlayerProj() {
         </div>
         <div class="range-l"><span>Piso ${f1(floor)}</span><span>${P.n ? `Temp. ${f1(st.season)} · últ. 10 ${f1(st.last10)}` : 'Según historial previo'}</span><span>Techo ${f1(ceil)}</span></div>
       </div>
-      <div class="line-box">
+      <div class="line-box" id="line-box-wrap">
         <input class="input" id="line-in" inputmode="decimal" placeholder="Línea, ej. ${half(st.proj)}" value="${esc(jug.line || '')}" aria-label="Línea de la casa de apuestas">
         ${lineHTML}
       </div>
     </div>
     `;
+  if (isAdmin) {
+    $('jug-proj-out').insertAdjacentHTML('beforeend', '<button class="btn share-btn" id="share-player"><i class="fa-solid fa-camera"></i> GENERAR FOTO PARA REDES</button>');
+    const inJ = (cache.jornadas[J.fecha] || []).some(g => (g.local === jug.teamId && g.visitante === jug.projRival) || (g.visitante === jug.teamId && g.local === jug.projRival));
+    $('share-player').addEventListener('click', () => openShare('player', { pl: p, teamId: jug.teamId, rivalId: jug.projRival, P: jug.proj, focus: jug.focus, date: fechaFoto(inJ ? J.fecha : null) }));
+  }
   $('jug-proj-out').querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => { jug.focus = c.dataset.k; jug.line = ''; renderPlayerProj(); }));
   const inp = $('line-in');
   inp.addEventListener('change', () => { jug.line = inp.value.replace(',', '.'); renderPlayerProj(); });
