@@ -215,21 +215,29 @@ table.log td.hl{font-weight:800}
 .line-out b{font-family:var(--display);font-weight:400;font-size:22px}
 
 /* Lesiones */
-.inj{border-top:1px solid var(--line-soft);padding:12px 14px;background:var(--paper)}
-.inj-h{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--display);font-size:16px;letter-spacing:.5px;margin-bottom:8px}
-.inj-h small{font-family:var(--body);font-size:11px;color:var(--muted);letter-spacing:0;white-space:nowrap}
-.inj-team{display:flex;gap:10px;align-items:flex-start;padding:6px 0}
-.inj-team+.inj-team{border-top:1px dashed var(--line-soft)}
-.inj-list{display:flex;flex-wrap:wrap;gap:6px;flex:1;min-width:0}
-.ib{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:3px 8px;border-radius:3px;background:var(--paper-2);border:1px solid var(--line)}
-.ib i{font-style:normal;font-weight:700;font-size:10px;padding:1px 5px;border-radius:2px;color:#fff}
-.ib.out i{background:var(--loss)} .ib.doubt i{background:#b3261e;opacity:.8} .ib.q i{background:var(--warn)} .ib.prob i{background:var(--faint)}
-.inj-none{font-size:12px;color:var(--muted)}
-.adj{font-size:12px;color:var(--ink-2);margin-top:8px;background:var(--paper-2);border-radius:3px;padding:8px 10px}
+.inj{border-top:1px solid var(--line-soft);background:var(--paper)}
+.inj summary{list-style:none;display:flex;align-items:center;gap:14px;padding:12px 14px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.inj summary::-webkit-details-marker{display:none}
+.inj-ttl{font-family:var(--display);font-size:16px;letter-spacing:.5px;margin-right:auto}
+.inj-tm{display:flex;align-items:center;gap:6px}
+.inj-n{display:grid;place-items:center;min-width:30px;height:30px;padding:0 6px;border-radius:4px;font-family:var(--display);font-size:16px;color:#fff;background:var(--faint)}
+.inj-n.out{background:var(--loss)} .inj-n.q{background:var(--warn)} .inj-n.zero{background:var(--paper-2);color:var(--muted);border:1px solid var(--line)}
+.inj-chev{color:var(--muted);transition:transform .2s}
+.inj[open] .inj-chev{transform:rotate(180deg)}
+.inj-body{padding:0 14px 12px}
+.inj-team{padding:8px 0;border-top:1px dashed var(--line-soft)}
+.inj-team .tn{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;margin-bottom:6px}
+.inj-row{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:14px}
+.inj-row i{font-style:normal;font-weight:700;font-size:10px;padding:2px 6px;border-radius:2px;color:#fff;min-width:62px;text-align:center}
+.inj-row.out i{background:var(--loss)} .inj-row.doubt i{background:#8f2a20} .inj-row.q i{background:var(--warn)} .inj-row.prob i{background:var(--faint)}
+.inj-row span{color:var(--muted)}
+.inj-none{font-size:13px;color:var(--muted)}
+.adj{font-size:13px;color:var(--ink-2);margin-top:8px;background:var(--paper-2);border-radius:3px;padding:8px 10px}
 .inj-alert{display:flex;gap:10px;align-items:flex-start;border-radius:4px;padding:12px 14px;margin:12px 0 0;font-size:14px;color:#fff}
 .inj-alert.out{background:var(--loss)} .inj-alert.q{background:var(--warn)}
 .inj-alert b{display:block;font-size:15px}
 .tier.inj{background:var(--warn);color:#fff;margin-left:4px}
+.btn-primary.blocked,.btn-primary.blocked:disabled{background:var(--loss);opacity:1;cursor:not-allowed}
 
 /* Picks */
 .pick{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:12px 14px}
@@ -1039,13 +1047,20 @@ async function runVegas(L, A) {
 }
 
 function injBlockHTML(L, A, p) {
-  if (!p.inj) return `<div class="inj"><div class="inj-h">LESIONES</div><span class="inj-none">No se pudo consultar el reporte de lesiones de ESPN en este momento. Revísalo antes de decidir.</span></div>`;
-  const row = id => `<div class="inj-team">${tileHTML(id, 'xs')}<div class="inj-list">${injBadges(p.inj[id] || [])}</div></div>`;
+  if (!p.inj) return `<div class="inj"><div style="padding:12px 14px" class="inj-none"><b>Lesiones:</b> no se pudo consultar el reporte de ESPN en este momento.</div></div>`;
+  const listOf = id => p.inj[id] || [];
+  const count = id => listOf(id).filter(x => x.cat !== 'prob').length;
+  const cls = id => listOf(id).some(x => x.cat === 'out') ? 'out' : count(id) ? 'q' : 'zero';
+  const chip = id => `<span class="inj-tm">${tileHTML(id, 'xs')}<span class="inj-n ${cls(id)}">${count(id)}</span></span>`;
+  const team = id => `<div class="inj-team"><div class="tn">${tileHTML(id, 'xs')}${esc(teamName(id))}</div>${listOf(id).length
+    ? listOf(id).map(x => `<div class="inj-row ${x.cat}"><i>${INJ_LABEL[x.cat].toUpperCase()}</i>${esc(x.name)}${x.what ? `<span>· ${esc(x.what)}</span>` : ''}</div>`).join('')
+    : '<div class="inj-none">Sin bajas reportadas</div>'}</div>`;
   const adjTxt = (id, a) => a.players.length ? `${esc(teamAbbr(id))} sin ${a.players.map(x => esc(x.name)).join(', ')}` : '';
   const adj = [adjTxt(A, p.adjA), adjTxt(L, p.adjL)].filter(Boolean);
-  return `<div class="inj"><div class="inj-h">LESIONES <small>ESPN · ${new Date(injCache.at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</small></div>
-    ${row(A)}${row(L)}
-    ${adj.length ? `<div class="adj"><b>Marcador ajustado por bajas:</b> ${adj.join(' · ')}.</div>` : ''}</div>`;
+  return `<details class="inj">
+    <summary aria-label="Ver lesiones de ambos equipos"><span class="inj-ttl">LESIONES</span>${chip(A)}${chip(L)}<i class="fa-solid fa-chevron-down inj-chev"></i></summary>
+    <div class="inj-body">${team(A)}${team(L)}${adj.length ? `<div class="adj"><b>Marcador ajustado por bajas:</b> ${adj.join(' · ')}.</div>` : ''}</div>
+  </details>`;
 }
 
 function renderVegas(L, A, sL, sA, p) {
@@ -1107,7 +1122,7 @@ function renderVegas(L, A, sL, sA, p) {
       return `<div class="tape-row"><b class="${leadVis ? 'lead' : ''}">${f1(vis)}</b><span>${lbl}</span><b class="${leadLoc ? 'lead' : ''}">${f1(loc)}</b></div>`;
     }).join('')}
   </div>
-  <p class="disclaimer">Modelo: ${esc(p.method.toLowerCase())}. ${sA.n + sL.n ? `Basado en ${sA.n} partidos de ${esc(teamName(A))} y ${sL.n} de ${esc(teamName(L))}${p.early ? ', combinados con el historial previo de cada equipo mientras avanza la temporada' : ''}` : 'Aún sin partidos de temporada regular: basado en el historial previo de cada equipo'}. Con pocos partidos los ratings se acercan al promedio de la liga, y el local recibe ${HOME_EDGE} puntos de ventaja en el margen. No considera lesiones ni descansos: revísalos antes de decidir.</p>`;
+  `;
 }
 // =========================================================
 // MOTOR ESTADÍSTICO — JUGADORES
@@ -1258,6 +1273,8 @@ $('jug-rival').addEventListener('change', e => {
 
 function updateProjButton() {
   const b = $('jug-calc-btn');
+  b.classList.toggle('blocked', !!jug.injOut);
+  if (jug.injOut) { b.disabled = true; b.textContent = 'JUGADOR LESIONADO'; return; }
   if (jug.rivalId) { b.disabled = false; b.textContent = `PROYECTAR VS ${teamAbbr(jug.rivalId)}`; }
   else { b.disabled = true; b.textContent = 'ELIGE UN RIVAL PARA PROYECTAR'; }
 }
@@ -1276,13 +1293,14 @@ async function selectTeam(teamId, rivalId) {
   $('jug-body').innerHTML = '';
   $('jug-proj-wrap').classList.add('hidden');
   try {
-    const r = await getRoster(teamId);
+    const [r, injL] = await Promise.all([getRoster(teamId), getInjuries()]);
     const js = r?.jugadores || {};
+    const tagOf = pl => { const x = injL ? injuryFor(injL, teamId, pl) : null; return x ? (x.cat === 'out' ? ' · LESIONADO' : x.cat === 'prob' ? '' : ' · en duda') : ''; };
     const list = Object.keys(js).map(pid => ({ id: pid, ...js[pid], gp: playerGames(js[pid]).length, pm: js[pid].previa?.avg?.min || 0 }))
       .sort((a, b) => (b.gp - a.gp) || (b.pm - a.pm) || String(a.nombre).localeCompare(String(b.nombre)));
     if (!list.length) { sel.innerHTML = '<option value="">Este equipo no tiene roster cargado</option>'; return; }
     sel.innerHTML = '<option value="" disabled selected>Elige un jugador…</option>' +
-      list.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}${p.posicion ? ` (${esc(p.posicion)})` : ''}${p.gp || hasHistory(p) ? '' : ' · sin partidos'}</option>`).join('');
+      list.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}${p.posicion ? ` (${esc(p.posicion)})` : ''}${p.gp || hasHistory(p) ? '' : ' · sin partidos'}${tagOf(p)}</option>`).join('');
     sel.disabled = false;
   } catch (err) {
     console.error(err);
@@ -1301,16 +1319,21 @@ function currentPlayer() { return cache.rosters[jug.teamId]?.jugadores?.[jug.pla
 function injAlertHTML(x) {
   if (!x || x.cat === 'prob') return x ? `<div class="note" style="margin-top:12px">Aparece como <b>probable</b> en el reporte de lesiones${x.what ? ` (${esc(x.what)})` : ''}.</div>` : '';
   const out = x.cat === 'out';
-  return `<div class="inj-alert ${out ? 'out' : 'q'}"><i class="fa-solid fa-kit-medical" style="margin-top:3px"></i><div><b>${out ? 'FUERA DEL PARTIDO' : 'EN DUDA PARA JUGAR'}</b>${x.what ? `Lesión: ${esc(x.what)}. ` : ''}${out ? 'No debería jugar; la proyección es solo de referencia.' : 'Confirma si juega antes de decidir.'}</div></div>`;
+  return `<div class="inj-alert ${out ? 'out' : 'q'}"><i class="fa-solid fa-kit-medical" style="margin-top:3px"></i><div><b>${out ? 'LESIONADO · FUERA DEL PARTIDO' : 'EN DUDA PARA JUGAR'}</b>${x.what ? `Lesión: ${esc(x.what)}. ` : ''}${out ? 'Está confirmado fuera, por eso no se puede proyectar.' : 'Confirma si juega antes de decidir.'}</div></div>`;
 }
 async function renderPlayerInjury() {
   const p = currentPlayer(); if (!p) return;
   const inj = await getInjuries();
   const box = $('jug-inj'); if (!box || currentPlayer() !== p) return;
-  box.innerHTML = inj ? injAlertHTML(injuryFor(inj, jug.teamId, p)) : '';
+  const x = inj ? injuryFor(inj, jug.teamId, p) : null;
+  jug.injOut = !!(x && x.cat === 'out');
+  box.innerHTML = x ? injAlertHTML(x) : '';
+  if (jug.injOut) { $('jug-proj-out').innerHTML = ''; jug.proj = null; }
+  updateProjButton();
 }
 function renderPlayer() {
   const p = currentPlayer(); if (!p) return;
+  jug.injOut = !!(injCache.data && injuryFor(injCache.data, jug.teamId, p)?.cat === 'out');
   setTimeout(renderPlayerInjury, 0);
   const games = playerGames(p);
   const bio = [p.posicion, p.dorsal ? '#' + p.dorsal : '', p.estatura, p.edad ? p.edad + ' años' : ''].filter(Boolean).map(esc).join(' · ');
@@ -1365,7 +1388,7 @@ function renderPlayerLog(games) {
 
 $('jug-calc-btn').addEventListener('click', async () => {
   const out = $('jug-proj-out');
-  if (!jug.playerId || !jug.rivalId) return;
+  if (!jug.playerId || !jug.rivalId || jug.injOut) return;
   const btn = $('jug-calc-btn');
   busy(btn, 'CALCULANDO…');
   try {
@@ -1418,7 +1441,7 @@ function renderPlayerProj() {
         ${lineHTML}
       </div>
     </div>
-    <p class="disclaimer">${P.n ? `Promedio de ${P.n} partidos` : 'Sin partidos de temporada regular todavía'}${P.early ? ', combinado con su historial previo' : ''} (la forma reciente pesa 45%), ajustado por la defensa y el ritmo del rival. Escribe la línea de tu casa de apuestas para ver la probabilidad estimada y cuántas veces la superó. Revisa lesiones y minutos antes de decidir.</p>`;
+    `;
   $('jug-proj-out').querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => { jug.focus = c.dataset.k; jug.line = ''; renderPlayerProj(); }));
   const inp = $('line-in');
   inp.addEventListener('change', () => { jug.line = inp.value.replace(',', '.'); renderPlayerProj(); });
