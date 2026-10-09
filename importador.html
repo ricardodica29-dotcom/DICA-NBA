@@ -119,6 +119,18 @@ td{padding:8px 10px;border-top:1px solid var(--line-soft)}
 .urow .mail{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
 .urow .st{font-size:12px;font-weight:700;padding:2px 8px;border-radius:3px;white-space:nowrap}
 .st.ok{background:var(--win);color:#fff}.st.soon{background:var(--warn);color:#fff}.st.off{background:var(--loss);color:#fff}
+.alert-box{border:2px solid var(--loss);border-radius:4px;padding:12px;margin-bottom:16px;background:#fbeeea}
+.alert-box h3{font-family:var(--display);font-weight:400;font-size:20px;color:var(--loss);margin-bottom:8px;letter-spacing:.5px}
+.arow{padding:10px 0;border-top:1px solid #ecc9c0;font-size:14px}
+.arow:first-of-type{border-top:0}
+.arow b{display:block}
+.arow small{display:block;color:var(--muted);margin:2px 0 8px}
+.arow .acts{display:flex;gap:8px;flex-wrap:wrap}
+.mini{padding:7px 12px;border-radius:4px;font-size:13px;font-weight:700}
+.mini.red{background:var(--loss);color:#fff}.mini.gray{background:var(--panel);border:1px solid var(--line);color:var(--muted)}
+.code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--bg);padding:1px 6px;border-radius:3px;color:var(--text)}
+.dev{font-size:12px;color:var(--muted)}
+.urow .acts2{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .urow .edit{font-size:13px;font-weight:600;color:var(--blue);text-decoration:underline}
 </style>
 </head>
@@ -202,6 +214,8 @@ td{padding:8px 10px;border-top:1px solid var(--line-soft)}
 
     <!-- ALTA MANUAL DE USUARIOS -->
     <div class="panel hidden" id="user-card" style="border-left:4px solid var(--red)">
+      <div id="alerts-wrap"></div>
+      <div class="field" style="margin-bottom:16px"><label class="lbl" for="code-find">Buscar por código de marca de agua</label><div style="display:flex;gap:8px"><input class="input" id="code-find" placeholder="Ej. 3K9X2A" autocomplete="off" style="text-transform:uppercase"><button class="btn btn-blue" id="code-btn" style="width:auto;padding:0 18px">Buscar</button></div><div class="log" id="code-log"></div></div>
       <div class="panel-h"><span class="n"><i class="fa-solid fa-user-plus" style="font-size:17px"></i></span><div><h2>Dar acceso a un usuario</h2><p>Escribe su correo y hasta cuándo tiene acceso.</p></div></div>
       <div class="field"><label class="lbl" for="u-mail">Correo del usuario</label><input class="input" id="u-mail" type="email" placeholder="cliente@gmail.com" autocomplete="off"></div>
       <div class="field"><label class="lbl" for="u-date">Vence el</label><input class="input" id="u-date" type="date"></div>
@@ -271,7 +285,7 @@ td{padding:8px 10px;border-top:1px solid var(--line-soft)}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, writeBatch, arrayUnion, Timestamp, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, writeBatch, arrayUnion, Timestamp, collection, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // MISMA CONFIGURACIÓN QUE DICA_NBA.html (proyecto Firebase de NBA)
 const firebaseConfig = {
@@ -486,6 +500,7 @@ function applyMode() {
   $('espn-card').classList.toggle('hidden', !c.espn);
   $('prev-card').classList.toggle('hidden', !c.special);
   $('user-card').classList.toggle('hidden', mode !== 'usuarios');
+  if (mode === 'usuarios') loadAlerts();
   $('file-card').classList.toggle('hidden', !!c.special);
   ['teams', 'roster', 'games', 'day'].forEach(k => $('espn-' + k).classList.toggle('hidden', c.espn !== k));
   $('espn-log').innerHTML = '';
@@ -1189,7 +1204,9 @@ async function loadUsers() {
   const box = $('u-list');
   box.innerHTML = '<p class="small">Cargando…</p>';
   try {
-    const snap = await getDocs(collection(db, 'acceso_usuarios'));
+    const [snap, ses] = await Promise.all([getDocs(collection(db, 'acceso_usuarios')), getDocs(collection(db, 'sesiones')).catch(() => null)]);
+    const devs = {};
+    ses?.docs.forEach(d => { devs[d.id] = Object.values(d.data().devices || {}); });
     const hoy = isoDate(new Date()), pronto = addDaysIso(hoy, 7);
     const rows = snap.docs.map(d => ({ correo: d.id, vence: d.data().vence || '', ok: !!d.data().vence_ts }))
       .sort((a, b) => a.vence.localeCompare(b.vence));
@@ -1198,16 +1215,61 @@ async function loadUsers() {
       const st = !r.vence || r.vence < hoy ? ['off', 'Vencido'] : r.vence <= pronto ? ['soon', 'Vence pronto'] : ['ok', 'Activo'];
       const [y, m, d] = (r.vence || '0-0-0').split('-').map(Number);
       const f = r.vence ? new Date(y, m - 1, d).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }) : 'sin fecha';
-      return `<div class="urow"><span class="mail">${esc(r.correo)}<br><small style="font-weight:500;color:var(--muted)">${esc(f)}${r.ok ? '' : ' · vuelve a guardarlo'}</small></span>
-        <span class="st ${st[0]}">${st[1]}</span><button class="edit" data-mail="${esc(r.correo)}">Renovar</button></div>`;
-    }).join('')}</div><p class="small">${rows.length} usuarios. Ver esta lista gasta una lectura por usuario.</p>`;
-    box.querySelectorAll('.edit').forEach(b => b.addEventListener('click', () => {
+      const dl = devs[r.correo] || [];
+      return `<div class="urow"><span class="mail">${esc(r.correo)}<br><small style="font-weight:500;color:var(--muted)">${esc(f)}${r.ok ? '' : ' · vuelve a guardarlo'} · <span class="code">${userCode(r.correo)}</span></small><br><span class="dev">${dl.length}/${MAX_DEV} dispositivos${dl.length ? ': ' + dl.map(x => esc(x.name || 'Dispositivo')).join(', ') : ''}</span></span>
+        <span class="st ${st[0]}">${st[1]}</span><span class="acts2"><button class="edit" data-mail="${esc(r.correo)}">Renovar</button>${dl.length ? `<button class="edit" data-free="${esc(r.correo)}">Liberar</button>` : ''}</span></div>`;
+    }).join('')}</div><p class="small">${rows.length} usuarios. El código es el que aparece en su marca de agua. Ver esta lista gasta unas dos lecturas por usuario.</p>`;
+    box.querySelectorAll('[data-mail]').forEach(b => b.addEventListener('click', () => {
       $('u-mail').value = b.dataset.mail; $('u-date').value = '';
       $('u-mail').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('u-date').focus();
     }));
+    box.querySelectorAll('[data-free]').forEach(b => b.addEventListener('click', () => freeDevices(b.dataset.free)));
   } catch (e) { console.error(e); box.innerHTML = '<p class="small" style="color:var(--loss)">No se pudo cargar la lista: ' + esc(e.message) + '</p>'; }
 }
 $('u-list-btn').addEventListener('click', loadUsers);
+
+// =========================================================
+// DISPOSITIVOS Y ALERTAS
+// =========================================================
+const MAX_DEV = 2;
+function userCode(email) {
+  let h = 5381; for (const c of String(email).toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0;
+  return h.toString(36).toUpperCase().padStart(6, '0').slice(-6);
+}
+async function freeDevices(correo) {
+  if (!confirm(`¿Liberar los dispositivos de ${correo}? Podrá entrar desde sus nuevos dispositivos (máximo ${MAX_DEV}).`)) return;
+  try {
+    await setDoc(doc(db, 'sesiones', correo), { devices: {} });
+    const al = await getDocs(collection(db, 'alertas'));
+    await Promise.all(al.docs.filter(d => d.data().correo === correo).map(d => deleteDoc(d.ref)));
+    alert('Listo: dispositivos liberados.');
+    loadAlerts(); if ($('u-list').innerHTML) loadUsers();
+  } catch (e) { alert('No se pudo liberar: ' + e.message); }
+}
+async function loadAlerts() {
+  const box = $('alerts-wrap');
+  try {
+    const snap = await getDocs(collection(db, 'alertas'));
+    if (!snap.size) { box.innerHTML = ''; return; }
+    const rows = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    box.innerHTML = `<div class="alert-box"><h3>⚠ ALERTAS DE DISPOSITIVOS (${rows.length})</h3>${rows.map(a => `
+      <div class="arow"><b>${esc(a.correo)}</b>
+        <small>Intentó entrar desde <b style="display:inline">${esc(a.dispositivo || 'un dispositivo')}</b> el ${esc(new Date(a.fecha).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }))}<br>Ya tenía: ${esc((a.registrados || []).join(', ') || '—')}.</small>
+        <div class="acts"><button class="mini red" data-free="${esc(a.correo)}">Liberar sus dispositivos</button><button class="mini gray" data-del="${esc(a.id)}">Descartar alerta</button></div></div>`).join('')}</div>`;
+    box.querySelectorAll('[data-free]').forEach(b => b.addEventListener('click', () => freeDevices(b.dataset.free)));
+    box.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', async () => { try { await deleteDoc(doc(db, 'alertas', b.dataset.del)); loadAlerts(); } catch (e) { alert(e.message); } }));
+  } catch (e) { console.warn(e); box.innerHTML = '<p class="small" style="color:var(--loss)">No se pudieron leer las alertas. Revisa que las reglas nuevas de Firestore estén publicadas.</p>'; }
+}
+const codeLog = logger($('code-log'));
+$('code-btn').addEventListener('click', async () => {
+  const q = $('code-find').value.trim().toUpperCase(); $('code-log').innerHTML = '';
+  if (!q) return;
+  try {
+    const snap = await getDocs(collection(db, 'acceso_usuarios'));
+    const hit = snap.docs.map(d => d.id).find(c => userCode(c) === q);
+    hit ? codeLog(`El código ${esc(q)} es de: <b>${esc(hit)}</b>`) : codeLog(`Ningún usuario tiene el código ${esc(q)}.`, 'bad');
+  } catch (e) { codeLog('No se pudo buscar: ' + esc(e.message), 'bad'); }
+});
 </script>
 </body>
 </html>

@@ -249,6 +249,10 @@ table.log td.hl{font-weight:800}
 .shm-act .btn{height:46px;font-size:17px}
 .shm-close{color:var(--paper);font-size:14px;text-decoration:underline;padding:8px}
 
+/* Marca de agua (solo clientes) */
+#wm{position:fixed;inset:0;z-index:35;pointer-events:none;background-repeat:repeat;opacity:1}
+.admin-alert{display:flex;align-items:center;gap:10px;background:var(--loss);color:#fff;border-radius:4px;padding:12px 14px;margin-bottom:16px;font-size:14px;font-weight:600}
+
 /* Picks */
 .pick{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:12px 14px}
 .pick+.pick{margin-top:8px}
@@ -300,7 +304,7 @@ table.log td.hl{font-weight:800}
 <!-- ============ ACCESO VENCIDO ============ -->
 <section id="expired" class="screen hidden">
   <div class="expired">
-    <div class="ico"><i class="fa-solid fa-lock"></i></div>
+    <div class="ico"><i class="fa-solid fa-lock" id="expired-ico"></i></div>
     <h2 id="expired-title">TU ACCESO VENCIÓ</h2>
     <p id="expired-text">Tu suscripción a DICA NBA terminó. Escríbeme para renovarla y seguir viendo las proyecciones de cada jornada.</p>
     <a class="btn btn-wa" id="wa-link" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp"></i> Escribir por WhatsApp</a>
@@ -311,6 +315,7 @@ table.log td.hl{font-weight:800}
 
 <!-- ============ APP ============ -->
 <div id="app" class="hidden">
+  <div id="wm" aria-hidden="true"></div>
   <header class="topbar">
     <div class="topbar-in">
       <div class="wm">
@@ -326,6 +331,7 @@ table.log td.hl{font-weight:800}
 
       <!-- TAB: EQUIPOS -->
       <section id="tab-stats">
+        <div id="admin-alert" class="admin-alert hidden"></div>
         <h2 class="h2">EQUIPOS</h2>
         <p class="sub">Promedios de la temporada y registro partido por partido.</p>
         <div class="field">
@@ -434,7 +440,7 @@ table.log td.hl{font-weight:800}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // =========================================================
 // CREDENCIALES DEL PROYECTO FIREBASE DE NBA
@@ -600,6 +606,86 @@ function showTab(t) {
 document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 
 // ---------- Sesión ----------
+
+// =========================================================
+// SEGURIDAD: límite de dispositivos + marca de agua
+// =========================================================
+const MAX_DEV = 2;
+function userCode(email) {   // código corto y fijo por usuario (el mismo aparece en el importador)
+  let h = 5381; for (const c of String(email).toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0;
+  return h.toString(36).toUpperCase().padStart(6, '0').slice(-6);
+}
+function maskEmail(e) {
+  const [u, d] = String(e).split('@'); if (!d) return e;
+  return (u.length <= 3 ? u[0] + '**' : u.slice(0, 3) + '***') + '@' + d;
+}
+function deviceName() {
+  const ua = navigator.userAgent;
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : 'Otro';
+  const br = /Edg\//.test(ua) ? 'Edge' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /FxiOS|Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'Navegador';
+  return `${os} · ${br}`;
+}
+async function fingerprint() {
+  const raw = [navigator.userAgent, navigator.language, screen.width + 'x' + screen.height, screen.colorDepth, Intl.DateTimeFormat().resolvedOptions().timeZone, navigator.hardwareConcurrency || 0, navigator.maxTouchPoints || 0].join('|');
+  try { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw)); return [...new Uint8Array(b)].slice(0, 8).map(x => x.toString(16).padStart(2, '0')).join(''); }
+  catch { let h = 0; for (const c of raw) h = (h * 31 + c.charCodeAt(0)) | 0; return String(h >>> 0); }
+}
+const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+// Devuelve true si el dispositivo puede entrar. Si Firebase falla, deja entrar (no bloquea por error).
+async function checkDevice(email) {
+  try {
+    const ref = doc(db, 'sesiones', email);
+    const snap = await getDoc(ref);
+    const devices = snap.exists() ? (snap.data().devices || {}) : {};
+    const fp = await fingerprint();
+    let id = lsGet('dica_dev');
+    if (!id || !devices[id]) {
+      const match = Object.keys(devices).find(k => devices[k].fp === fp);   // mismo equipo aunque haya borrado datos del navegador
+      if (match) id = match;
+      if (!id) id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).replace(/-/g, '').slice(0, 16);
+      lsSet('dica_dev', id);
+    }
+    const now = new Date().toISOString();
+    if (devices[id]) {
+      if (Date.now() - Date.parse(devices[id].last || 0) > 12 * 3600 * 1000)
+        await setDoc(ref, { devices: { [id]: { ...devices[id], last: now } } }, { merge: true });
+      return true;
+    }
+    if (Object.keys(devices).length < MAX_DEV) {
+      await setDoc(ref, { devices: { [id]: { fp, name: deviceName(), first: now, last: now } } }, { merge: true });
+      return true;
+    }
+    const hoy = now.slice(0, 10);
+    try {
+      await setDoc(doc(db, 'alertas', `${email}_${id}_${hoy}`), {
+        correo: email, dispositivo: deviceName(), fecha: now,
+        registrados: Object.values(devices).map(d => d.name || 'Dispositivo')
+      });
+    } catch {}   // si ya existe la alerta de hoy, no se repite
+    return false;
+  } catch (e) {
+    console.warn('No se pudo verificar el dispositivo', e);
+    return true;
+  }
+}
+function applyWatermark(email) {
+  const t1 = 'DICA NBA · ' + maskEmail(email), t2 = 'ID ' + userCode(email);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="190"><g transform="rotate(-28 150 95)" font-family="Archivo, Arial, sans-serif" fill="#1c1712" fill-opacity="0.1" text-anchor="middle"><text x="150" y="90" font-size="15" font-weight="700">${esc(t1)}</text><text x="150" y="110" font-size="13" font-weight="600">${esc(t2)}</text></g></svg>`;
+  $('wm').style.backgroundImage = `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
+  $('wm').classList.remove('hidden');
+}
+async function loadAdminAlerts() {
+  try {
+    const snap = await getDocs(collection(db, 'alertas'));
+    const n = snap.size;
+    const box = $('admin-alert');
+    if (!n) { box.classList.add('hidden'); return; }
+    box.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i><span>${n} ${n === 1 ? 'alerta' : 'alertas'} de dispositivos: alguien intentó entrar desde un dispositivo extra. Revísalo en el importador, modo Vencimientos.</span>`;
+    box.classList.remove('hidden');
+  } catch (e) { console.warn(e); }
+}
+
 function show(which) {
   $('login').classList.toggle('hidden', which !== 'login');
   $('expired').classList.toggle('hidden', which !== 'expired');
@@ -627,6 +713,17 @@ if (CONFIG_OK) {
         show('expired');
         return;
       }
+      if (!(await checkDevice(email))) {
+        $('expired-ico').className = 'fa-solid fa-mobile-screen-button';
+        $('expired-title').textContent = 'LÍMITE DE DISPOSITIVOS';
+        $('expired-text').textContent = `Tu cuenta ya está activa en ${MAX_DEV} dispositivos. Si cambiaste de celular o computadora, escríbeme y libero tu acceso.`;
+        show('expired');
+        return;
+      }
+      applyWatermark(email);
+    } else {
+      $('wm').classList.add('hidden');
+      loadAdminAlerts();
     }
     $('picks-generate').classList.toggle('hidden', !isAdmin);
     show('app');
