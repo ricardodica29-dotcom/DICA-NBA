@@ -102,6 +102,22 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .linkbtn{display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:14px;font-weight:600;color:var(--navy);text-decoration:underline;text-underline-offset:3px}
 
+/* Lector IA de capturas */
+.ai-box{background:var(--paper);border:1px solid var(--line);border-left:4px solid var(--navy);border-radius:4px;padding:14px;margin-bottom:16px}
+.ai-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.ai-head b{font-family:var(--display);font-weight:400;font-size:20px;letter-spacing:.5px;color:var(--navy);display:flex;align-items:center;gap:7px}
+.ai-kbtn{font-size:12px;font-weight:700;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:var(--paper-2);color:var(--ink-2)}
+.ai-keybar{background:var(--paper-2);border:1px solid var(--line);border-radius:4px;padding:10px;margin-bottom:10px}
+.ai-keyrow{display:flex;gap:8px}
+.ai-keyrow .input{height:40px;font-size:14px}
+.ai-keyrow .btn{width:auto;height:40px;padding:0 14px;font-size:15px}
+.ai-drop{border:2px dashed var(--line);border-radius:4px;padding:16px 12px;text-align:center;cursor:pointer;background:var(--paper-2);transition:border-color .15s,background .15s}
+.ai-drop:hover,.ai-drop.over{border-color:var(--navy);background:rgba(31,63,143,.07)}
+.ai-drop i{font-size:22px;color:var(--navy);margin-bottom:4px}
+.ai-drop b{display:block;font-size:14px}
+.ai-drop span{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.ai-status{margin-top:10px;font-size:13px}
+
 /* Placas de equipo con sus colores */
 .tile{flex:0 0 auto;display:grid;place-items:center;width:56px;height:56px;border-radius:4px;font-family:var(--display);font-weight:400;font-size:18px;letter-spacing:.5px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.18)}
 .tile.sm{width:46px;height:46px;font-size:16px}
@@ -547,6 +563,30 @@ table.log td.hl{font-weight:800}
           <label class="lbl" for="pk-fecha">Jornada</label>
           <select class="select jornada-sel" id="pk-fecha"><option value="">Cargando jornadas…</option></select>
         </div>
+
+        <!-- LECTOR IA DE CAPTURAS PLAYDOIT (solo admin / captura) -->
+        <div id="ai-lines-box" class="ai-box hidden">
+          <div class="ai-head">
+            <b><i class="fa-solid fa-wand-magic-sparkles"></i> LECTOR DE CAPTURAS PLAYDOIT</b>
+            <button type="button" class="ai-kbtn" id="ai-key-toggle"><i class="fa-solid fa-key"></i> API Key</button>
+          </div>
+          <div id="ai-keybar" class="ai-keybar hidden">
+            <label class="lbl" for="ai-key-in">Llave gratuita de Google Gemini (se guarda solo en este dispositivo)</label>
+            <div class="ai-keyrow">
+              <input class="input" type="password" id="ai-key-in" placeholder="Pega aquí tu API Key (AIzaSy…)" autocomplete="off">
+              <button type="button" class="btn btn-ink" id="ai-key-save">GUARDAR</button>
+            </div>
+            <p class="small-note" style="margin:6px 0 0">Consíguela gratis en <b>aistudio.google.com</b> &gt; <i>Get API key</i>. Nunca se sube a GitHub.</p>
+          </div>
+          <div class="ai-drop" id="ai-drop" tabindex="0" role="button">
+            <i class="fa-solid fa-images"></i>
+            <b>Sube o pega capturas de Playdoit</b>
+            <span>Toca para elegir varias fotos de tu galería, arrástralas o pega con Ctrl+V. La IA filtra automáticamente las líneas con ventaja según DICA.</span>
+            <input type="file" id="ai-file-in" accept="image/*" multiple class="hidden">
+          </div>
+          <div id="ai-status" class="ai-status hidden"></div>
+        </div>
+
         <div class="section-t" style="margin-top:6px">PUNTOS</div>
         <p class="sub" style="margin-top:-4px">La línea más conveniente de cada partido según el modelo DICA, entre las líneas disponibles.</p>
         <div id="lines-out"></div>
@@ -645,11 +685,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebas
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, orderBy, limit, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-// =========================================================
-// CREDENCIALES DEL PROYECTO FIREBASE DE NBA
-// Pega aquí la configuración del proyecto NUEVO (no la de NFL).
-// Debe ser la misma en DICA_NBA.html y en DICA_NBA_importador.html
-// =========================================================
 const firebaseConfig = {
   apiKey: "AIzaSyCVkgWnZa83EjXsLCMt9YxHVq6d6Nnrw7I",
   authDomain: "dica-nba.firebaseapp.com",
@@ -662,18 +697,12 @@ const firebaseConfig = {
 const CONFIG_OK = !String(firebaseConfig.apiKey).startsWith('PEGA');
 const WHATSAPP = '527298812937';
 
-// =========================================================
-// CONSTANTES DE LIGA (promedios NBA aproximados por equipo y partido)
-// Ajústalas cada temporada si la liga cambia de ritmo.
-// =========================================================
 const LEAGUE = { pts:114.5, pace:99.5, ortg:115.0, fga:88.5, fgm:41.5, fg3a:37.5, fg3m:13.5, fta:21.5, reb:44.0, oreb:10.5, ast:26.5, tov:14.0, stl:8.2, blk:5.0 };
 const LG_EXTRA = { ftm: 17.0, ptsSd: 11 };
-// 1er cuarto: en la NBA cada equipo anota ~25% de sus puntos en el 1Q; desviación típica real del 1Q
 const Q1 = { share: 0.25, sdTeam: 6.3, sdTot: 9.2 };
-const HOME_EDGE = 2.5;    // ventaja de local en puntos de margen
-const MARGIN_SD = 12.5;   // desviación típica del margen final en la NBA
+const HOME_EDGE = 2.5;
+const MARGIN_SD = 12.5;
 
-// ---------- utilidades ----------
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = v => { if (v === '' || v === null || v === undefined) return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
@@ -722,10 +751,6 @@ const noteHTML = (msg, kind = '') => `<div class="note ${kind} fade-in">${msg}</
 function busy(btn, text) { btn.dataset.label = btn.dataset.label || btn.textContent; btn.disabled = true; btn.innerHTML = `<span class="spin"></span> ${text}`; }
 function idle(btn) { btn.disabled = false; btn.textContent = btn.dataset.label; }
 
-
-// =========================================================
-// COLORES DE CADA EQUIPO (fondo de la placa / letras)
-// =========================================================
 const TEAM_COLORS = {
   ATL:['#C8102E','#FFFFFF'], BOS:['#007A33','#FFFFFF'], BKN:['#000000','#FFFFFF'], CHA:['#1D1160','#00B2C2'],
   CHI:['#CE1141','#000000'], CLE:['#860038','#FDBB30'], DAL:['#00538C','#FFFFFF'], DEN:['#0E2240','#FEC524'],
@@ -738,7 +763,6 @@ const TEAM_COLORS = {
 };
 const ABBR_ALIAS = { GS:'GSW', NO:'NOP', NY:'NYK', SA:'SAS', UTAH:'UTA', WSH:'WAS', PHO:'PHX', BRK:'BKN', CHO:'CHA' };
 
-// ---------- Firebase ----------
 let auth = null, db = null;
 if (CONFIG_OK) {
   const fbApp = initializeApp(firebaseConfig);
@@ -752,9 +776,6 @@ if (CONFIG_OK) {
 $('wa-link').href = `https://wa.me/${WHATSAPP}`;
 $('info-link').href = `https://wa.me/${WHATSAPP}?text=${encodeURIComponent('Hola Ricardo, quiero informes de DICA NBA 🏀 ¿Cómo me suscribo y cuánto cuesta?')}`;
 
-// =========================================================
-// CACHÉ DE LECTURAS: cada documento se lee una sola vez por sesión
-// =========================================================
 const cache = { teams: [], teamMeta: {}, teamDocs: {}, rosters: {}, summaries: {}, jornadas: {} };
 async function getTeamDoc(id) {
   if (!(id in cache.teamDocs)) {
@@ -791,7 +812,6 @@ function teamColors(id) {
   const c = TEAM_COLORS[teamAbbr(id)];
   return c ? { bg: c[0], fg: c[1] } : { bg: '#1c1712', fg: '#fbf6ec' };
 }
-// Escudos y fotos desde el CDN de ESPN; si una imagen no carga, se muestran las placas e iniciales de siempre
 const ESPN_LOGO_AB = { GSW: 'gs', NOP: 'no', NYK: 'ny', SAS: 'sa', UTA: 'utah', WAS: 'wsh' };
 function logoUrl(id, px = 120) {
   const ab = teamAbbr(id); if (!ab || ab === '?') return '';
@@ -814,7 +834,6 @@ function avatarHTML(name, teamId, size = '', eid = '') {
 // ---------- Navegación ----------
 const TABS = ['stats', 'vegas', 'jugadores', 'picks', 'q1', 'res'];
 let currentTab = 'stats';
-// La pestaña 1er Q es privada del dueño: tus clientes no la ven
 function applyQ1Tab() {
   $('q1-tab-btn').classList.toggle('hidden', !isAdmin);
   document.querySelector('.tabnav-in').classList.toggle('six', isAdmin);
@@ -832,13 +851,11 @@ function showTab(t) {
 }
 document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 
-// ---------- Sesión ----------
-
 // =========================================================
 // SEGURIDAD: límite de dispositivos + marca de agua
 // =========================================================
 const MAX_DEV = 2;
-function userCode(email) {   // código corto y fijo por usuario (el mismo aparece en el importador)
+function userCode(email) {
   let h = 5381; for (const c of String(email).toLowerCase()) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0;
   return h.toString(36).toUpperCase().padStart(6, '0').slice(-6);
 }
@@ -859,7 +876,7 @@ async function fingerprint() {
 }
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
-// Devuelve true si el dispositivo puede entrar. Si Firebase falla, deja entrar (no bloquea por error).
+
 async function checkDevice(email) {
   try {
     const ref = doc(db, 'sesiones', email);
@@ -868,7 +885,7 @@ async function checkDevice(email) {
     const fp = await fingerprint();
     let id = lsGet('dica_dev');
     if (!id || !devices[id]) {
-      const match = Object.keys(devices).find(k => devices[k].fp === fp);   // mismo equipo aunque haya borrado datos del navegador
+      const match = Object.keys(devices).find(k => devices[k].fp === fp);
       if (match) id = match;
       if (!id) id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).replace(/-/g, '').slice(0, 16);
       lsSet('dica_dev', id);
@@ -889,7 +906,7 @@ async function checkDevice(email) {
         correo: email, dispositivo: deviceName(), fecha: now,
         registrados: Object.values(devices).map(d => d.name || 'Dispositivo')
       });
-    } catch {}   // si ya existe la alerta de hoy, no se repite
+    } catch {}
     return false;
   } catch (e) {
     console.warn('No se pudo verificar el dispositivo', e);
@@ -922,13 +939,11 @@ if (CONFIG_OK) {
   onAuthStateChanged(auth, async (user) => {
     if (!user) { show('login'); return; }
     const email = (user.email || '').toLowerCase();
-    // El admin siempre entra. Los demás necesitan alta en acceso_usuarios con fecha vigente
-    // (las reglas de Firestore aplican exactamente lo mismo del lado del servidor).
     try { isAdmin = (await getDoc(doc(db, 'admins_importador', email))).exists(); } catch { isAdmin = false; }
     isCapt = false;
     if (!isAdmin) { try { isCapt = (await getDoc(doc(db, 'capturistas', email))).exists(); } catch { isCapt = false; } }
     if (!isAdmin) {
-      let vence = isCapt ? '9999-12-31' : null;   // tu equipo de captura no necesita suscripción
+      let vence = isCapt ? '9999-12-31' : null;
       if (!isCapt) try {
         const acc = await getDoc(doc(db, 'acceso_usuarios', email));
         vence = acc.exists() ? acc.data().vence : null;
@@ -957,6 +972,7 @@ if (CONFIG_OK) {
     realAdmin = isAdmin; ME = email;
     $('view-btn').classList.toggle('hidden', !realAdmin);
     $('picks-generate').classList.toggle('hidden', !isAdmin);
+    updateAiBoxUI();
     applyQ1Tab();
     show('app');
     await Promise.all([loadTeams(), loadLeagueAvgs()]);
@@ -979,7 +995,7 @@ $('login-form').addEventListener('submit', async (e) => {
 $('logout-btn').addEventListener('click', () => signOut(auth));
 $('expired-logout').addEventListener('click', () => signOut(auth));
 
-// ---------- Promedios reales de la liga (1 lectura: liga/promedios; los calcula el importador) ----------
+// ---------- Promedios reales de la liga ----------
 async function loadLeagueAvgs() {
   try {
     const s = await getDoc(doc(db, 'liga', 'promedios'));
@@ -992,7 +1008,7 @@ async function loadLeagueAvgs() {
   } catch (e) { console.warn('Promedios de liga no disponibles', e); }
 }
 
-// ---------- Equipos (1 lectura: liga/equipos) ----------
+// ---------- Equipos ----------
 async function loadTeams() {
   try {
     const s = await getDoc(doc(db, 'liga', 'equipos'));
@@ -1011,7 +1027,7 @@ async function loadTeams() {
 }
 
 // =========================================================
-// JORNADAS: fechas con partidos cargados desde el importador
+// JORNADAS
 // =========================================================
 const J = { fechas: [], fecha: null };
 const todayET = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
@@ -1052,6 +1068,7 @@ function gameCard(g, attrs, on) {
   </button>`;
 }
 const emptyJornada = '<div class="empty" style="grid-column:1/-1"><i class="fa-regular fa-calendar"></i>No hay partidos cargados para esta jornada.</div>';
+
 // =========================================================
 // MOTOR ESTADÍSTICO — EQUIPOS
 // =========================================================
@@ -1059,7 +1076,6 @@ const TEAM_KEYS = ['fgm', 'fga', 'fg3m', 'fg3a', 'ftm', 'fta', 'oreb', 'reb', 'a
 
 function gamesOf(map) { return Object.keys(map || {}).sort().map(k => ({ key: k, ...map[k] })); }
 
-// Posesiones estimadas (fórmula estándar): TCI - ReboteOf + Pérdidas + 0.44·TLI
 function possOf(g, suf = '') {
   const fga = num(g['fga' + suf]), tov = num(g['tov' + suf]), fta = num(g['fta' + suf]);
   if (fga == null || tov == null || fta == null) return null;
@@ -1080,7 +1096,6 @@ function rawSummary(games) {
   s.ptsAvg = s.ptsFor.length ? mean(s.ptsFor) : null;
   s.ptsAgAvg = s.ptsAg.length ? mean(s.ptsAg) : null;
   s.ptsSd = stdev(s.ptsFor);
-  // 1er cuarto: qué parte de sus puntos anota (y permite) en el primer cuarto
   const q1o = games.filter(g => num(g.q1) != null && num(g.pts) > 0), q1a = games.filter(g => num(g.q1_allowed) != null && num(g.pts_allowed) > 0);
   s.nQ1 = q1o.length; s.q1Share = s.nQ1 ? q1o.reduce((a, g) => a + num(g.q1), 0) / q1o.reduce((a, g) => a + num(g.pts), 0) : null;
   s.nQ1a = q1a.length; s.q1AgShare = s.nQ1a ? q1a.reduce((a, g) => a + num(g.q1_allowed), 0) / q1a.reduce((a, g) => a + num(g.pts_allowed), 0) : null;
@@ -1102,8 +1117,6 @@ function rawSummary(games) {
   return s;
 }
 
-// Resumen que ve el usuario (solo temporada regular) + "eff": valores que usa el modelo,
-// mezclando temporada regular con el historial previo oculto (temporada pasada y pretemporada).
 function teamSummary(teamDoc) {
   const reg = rawSummary(gamesOf(teamDoc?.juegos));
   const pre = rawSummary(gamesOf(teamDoc?.pre));
@@ -1121,7 +1134,7 @@ function buildEff(reg, pre, prev) {
   const lgW = prev ? 1 : 6;
   const mix = (regV, regN, prevV, preV, lg) => {
     let num = lg * lgW, den = lgW;
-    if (prevV != null && prevW) { num += (lg + 0.75 * (prevV - lg)) * prevW; den += prevW; }  // los rosters cambian: 25% hacia el promedio
+    if (prevV != null && prevW) { num += (lg + 0.75 * (prevV - lg)) * prevW; den += prevW; }
     if (preV != null && preW) { num += preV * preW; den += preW; }
     if (regV != null && regN) { num += regV * regN; den += regN; }
     return num / den;
@@ -1145,8 +1158,6 @@ function buildEff(reg, pre, prev) {
   return e;
 }
 
-// Proyección de estadísticas de equipo: tasa por posesión propia (50%)
-// + lo que el rival permite por posesión (50%), multiplicado por el ritmo esperado del partido.
 function teamStatProj(own, riv, pace) {
   const out = {};
   const keys = ['fgm', 'fga', 'fg3m', 'fg3a', 'fta', 'oreb', 'reb', 'ast', 'tov', 'stl', 'blk'];
@@ -1167,7 +1178,7 @@ function teamStatProj(own, riv, pace) {
 }
 
 function projectGame(SL, SA) {
-  const L = SL.eff, A = SA.eff;   // valores ya mezclados con el historial previo y el promedio de liga
+  const L = SL.eff, A = SA.eff;
   const pace = L.pace * A.pace / LEAGUE.pace;
   let ptsL = (L.ortg * A.drtg / LEAGUE.ortg) * pace / 100;
   let ptsA = (A.ortg * L.drtg / LEAGUE.ortg) * pace / 100;
@@ -1180,11 +1191,10 @@ function projectGame(SL, SA) {
   };
 }
 
-
 // =========================================================
-// LESIONES: reporte oficial de ESPN (se consulta en vivo, no gasta lecturas de Firebase)
+// LESIONES: reporte oficial de ESPN
 // =========================================================
-const INJ_TTL = 10 * 60 * 1000;   // se vuelve a consultar cada 10 minutos
+const INJ_TTL = 10 * 60 * 1000;
 let injCache = { at: 0, data: null, err: false };
 const BODY_ES = { knee: 'rodilla', ankle: 'tobillo', hamstring: 'isquiotibial', foot: 'pie', back: 'espalda', hip: 'cadera', calf: 'pantorrilla',
   shoulder: 'hombro', wrist: 'muñeca', hand: 'mano', achilles: 'Aquiles', illness: 'enfermedad', rest: 'descanso', concussion: 'conmoción',
@@ -1238,11 +1248,11 @@ async function getInjuries() {
     return out;
   } catch (e) {
     console.warn('Reporte de lesiones no disponible', e);
-    injCache = { at: Date.now() - INJ_TTL + 60000, data: injCache.data, err: true };   // reintenta en 1 minuto
+    injCache = { at: Date.now() - INJ_TTL + 60000, data: injCache.data, err: true };
     return injCache.data;
   }
 }
-const normN = t => String(t ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[.'’]/g, '').replace(/\b(jr|sr|ii|iii|iv)\b/g, '').replace(/\s+/g, ' ').trim();
+const normN = t => String(t ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[.'’]/g, '').replace(/\b(jr|sr|ii|iii|iv)\b/g, '').replace(/\s+/g, ' ').trim();
 function injuryFor(inj, teamId, player) {
   const list = (inj && inj[teamId]) || [];
   const eid = String(player?.espn_id || '');
@@ -1252,9 +1262,6 @@ function injuryByName(inj, teamId, nombre, eid) {
   return injuryFor(inj, teamId, { nombre, espn_id: eid });
 }
 
-// Ajuste del marcador por bajas: solo jugadores "Fuera" de la rotación.
-// Ofensiva: el equipo pierde ~20% de los puntos y ~15% de las asistencias del jugador (el resto lo absorben sus compañeros).
-// Defensiva: el rival gana medio punto por cada robo + tapón que ya no estarán, más un poco por rebotes.
 async function injuryAdjust(teamId, rivalId, inj) {
   const out = ((inj && inj[teamId]) || []).filter(x => x.cat === 'out');
   if (!out.length) return { off: 0, def: 0, players: [] };
@@ -1265,7 +1272,7 @@ async function injuryAdjust(teamId, rivalId, inj) {
     const pid = Object.keys(js).find(k => (x.eid && String(js[k].espn_id || '') === x.eid) || normN(js[k].nombre) === normN(x.name));
     if (!pid) return;
     const P = projectPlayer(js[pid], own, riv);
-    if (!P || P.stats.min.proj < 12) return;   // fuera de la rotación: no mueve el marcador
+    if (!P || P.stats.min.proj < 12) return;
     const st = P.stats;
     const o = 0.20 * st.pts.proj + 0.15 * st.ast.proj;
     const d = 0.5 * (st.stl.proj + st.blk.proj) + 0.05 * st.reb.proj;
@@ -1278,9 +1285,8 @@ function injBadges(list) {
   return list.map(x => `<span class="ib ${x.cat}"><i>${INJ_LABEL[x.cat].toUpperCase()}</i>${esc(x.name)}${x.what ? ` · ${esc(x.what)}` : ''}</span>`).join('');
 }
 
-
 // =========================================================
-// FOTO PARA REDES (solo administrador): se dibuja en un canvas y se descarga como PNG
+// FOTO PARA REDES
 // =========================================================
 const SH = { kind: null, data: null, fmt: 'post', url: null, blob: null };
 const C = { wood: '#efe3cf', wood2: '#e8d9bf', paper: '#fbf6ec', paper2: '#f3eadb', ink: '#1c1712', muted: '#5f5346', faint: '#8a7b69', line: '#d8c7ab', orange: '#c9481a', win: '#2f7d4f', loss: '#b3261e', warn: '#a86a0c' };
@@ -1319,7 +1325,7 @@ function drawTile(ctx, id, x, y, s) {
 function drawFrame(ctx, W, H, dateTxt) {
   ctx.fillStyle = C.wood; ctx.fillRect(0, 0, W, H);
   for (let x = 92; x < W; x += 96) { ctx.fillStyle = C.wood2; ctx.fillRect(x, 0, 4, H); }
-  ctx.strokeStyle = 'rgba(28,23,18,.10)'; ctx.lineWidth = 4;   // líneas de cancha
+  ctx.strokeStyle = 'rgba(28,23,18,.10)'; ctx.lineWidth = 4;
   ctx.beginPath(); ctx.arc(W / 2, H + 40, 420, Math.PI, 0); ctx.stroke();
   ctx.strokeRect(W / 2 - 160, H - 380, 320, 400);
   ctx.fillStyle = C.paper; ctx.fillRect(0, 0, W, 150); ctx.fillStyle = C.orange; ctx.fillRect(0, 150, W, 10);
@@ -1336,7 +1342,6 @@ function drawGame(ctx, W, H, d) {
   const { L, A, p } = d;
   drawFrame(ctx, W, H, d.date);
   const story = H > 1500;
-  // medidas: la historia (9:16) tiene más aire; el post (4:5) va compacto
   const M = story
     ? { y0: 300, t: 76, cardH: 420, rowH: 190, tile: 140, nm: 44, tag: 30, sc: 170, scY: 132, nmY: 64, tagY: 112, gapP: 50, boxH: 130, boxV: 60, rh: 74, hdr: 70, sf: 40 }
     : { y0: 180, t: 64, cardH: 330, rowH: 150, tile: 110, nm: 40, tag: 28, sc: 136, scY: 106, nmY: 50, tagY: 92, gapP: 30, boxH: 108, boxV: 52, rh: 52, hdr: 56, sf: 34 };
@@ -1352,7 +1357,6 @@ function drawGame(ctx, W, H, d) {
     txt(ctx, String(Math.round(pts)), W - 90, ry + M.scY, { font: `${M.sc}px ${FD}`, color: fav ? C.ink : C.faint, align: 'right' });
   });
   ctx.fillStyle = C.line; ctx.fillRect(90, cy + M.rowH + 5, cw - 68, 2);
-  // probabilidad
   const pL = Math.round(p.pL * 100), pA = 100 - pL, by = cy + M.cardH + M.gapP;
   const cL = teamColors(L).bg, cA0 = teamColors(A).bg, cA = cA0.toLowerCase() === cL.toLowerCase() ? C.ink : cA0;
   ctx.save(); rr(ctx, 56, by, cw, 24, 6); ctx.clip();
@@ -1360,7 +1364,6 @@ function drawGame(ctx, W, H, d) {
   txt(ctx, `${pA}% ${teamAbbr(A)}`, 56, by + 70, { font: `46px ${FD}` });
   txt(ctx, 'PROBABILIDAD DE GANAR', W / 2, by + 64, { font: `600 24px ${FB}`, color: C.muted, align: 'center' });
   txt(ctx, `${teamAbbr(L)} ${pL}%`, W - 56, by + 70, { font: `46px ${FD}`, align: 'right' });
-  // total y margen
   const ly = by + 96, half2 = (cw - 20) / 2;
   const margin = Math.abs(p.ptsL - p.ptsA);
   const mTxt = margin < 0.25 ? 'PAREJO' : `${teamAbbr(favL ? L : A)} +${half(margin)}`;
@@ -1370,7 +1373,6 @@ function drawGame(ctx, W, H, d) {
     txt(ctx, lbl, x + 28, ly + 40, { font: `600 24px ${FB}`, color: C.muted });
     txt(ctx, v, x + 28, ly + M.boxH - 18, { font: `${M.boxV}px ${FD}`, max: half2 - 56 });
   });
-  // estadísticas clave
   const rows = [['% de campo', p.statsA.fgpct, p.statsL.fgpct, 1], ['Triples', p.statsA.fg3m, p.statsL.fg3m, 1], ['Rebotes', p.statsA.reb, p.statsL.reb, 1],
     ['Asistencias', p.statsA.ast, p.statsL.ast, 1], ['Pérdidas', p.statsA.tov, p.statsL.tov, -1]];
   if (story) rows.push(['Robos', p.statsA.stl, p.statsL.stl, 1], ['Tapones', p.statsA.blk, p.statsL.blk, 1]);
@@ -1388,7 +1390,6 @@ function drawGame(ctx, W, H, d) {
     txt(ctx, lbl, W / 2, yy + rh / 2 + 9, { font: `600 26px ${FB}`, color: C.muted, align: 'center' });
     txt(ctx, f1(l), W - 90, yy + rh / 2 + M.sf * 0.36, { font: `${M.sf}px ${FD}`, color: ll ? C.ink : C.faint, align: 'right' });
   });
-  // bajas confirmadas
   const outs = p.inj ? [A, L].flatMap(id => (p.inj[id] || []).filter(x => x.cat === 'out').map(x => `${x.name} (${teamAbbr(id)})`)) : [];
   if (outs.length) txt(ctx, 'Bajas: ' + outs.join(' · '), 56, ty + M.hdr + rows.length * rh + 44, { font: `600 26px ${FB}`, color: C.loss, max: cw });
   drawFooter(ctx, W, H);
@@ -1397,7 +1398,6 @@ function drawPlayer(ctx, W, H, d) {
   const { pl, teamId, rivalId, P } = d;
   drawFrame(ctx, W, H, d.date);
   const story = H > 1500, y0 = story ? 320 : 210, c = teamColors(teamId);
-  // avatar
   ctx.beginPath(); ctx.arc(140, y0 + 90, 90, 0, Math.PI * 2); ctx.fillStyle = c.bg; ctx.fill();
   const hs = SH.imgs && SH.imgs.p;
   if (hs) {
@@ -1411,12 +1411,10 @@ function drawPlayer(ctx, W, H, d) {
   txt(ctx, 'vs', 350, y0 + 158, { font: `600 32px ${FB}`, color: C.muted });
   drawTile(ctx, rivalId, 394, y0 + 112, 64);
   txt(ctx, teamName(rivalId), 476, y0 + 156, { font: `600 30px ${FB}`, color: C.muted, max: W - 532 });
-  // estadística principal
   const k = d.focus, my = y0 + 230, cw = W - 112;
   rr(ctx, 56, my, cw, 280, 10); ctx.fillStyle = C.ink; ctx.fill();
   txt(ctx, `${LABEL[k].toUpperCase()} PROYECTADOS`, 96, my + 66, { font: `40px ${FD}`, color: C.line, max: cw - 80 });
   txt(ctx, f1(P.stats[k].proj), 92, my + 236, { font: `190px ${FD}`, color: C.paper });
-  // resto
   const keys = ['pts', 'reb', 'ast', 'fg3m', 'pra', 'pr', 'pa', 'ra', 'stl'].filter(x => x !== k).slice(0, story ? 8 : 6);
   const gy = my + 310, gw = (cw - 40) / 3, gh = 150;
   keys.forEach((x, i) => {
@@ -1476,16 +1474,13 @@ $('share-native').addEventListener('click', async () => {
 });
 const fechaFoto = f => f ? fechaLarga(f) : fechaLarga(todayET());
 
-
 // =========================================================
 // PUBLICAR PICKS (admin) y RESULTADOS (todos)
-// publicados/{fecha} = { fecha, picks: [...] }  ·  liga/record = récord acumulado
 // =========================================================
 const PUB_KEYS = ['pts', 'reb', 'ast', 'fg3m', 'pra', 'pr', 'pa', 'ra', 'stl', 'blk', 'sb'];
 let PUB = { ctx: null };
 const lineFmt = v => (Math.round(v * 2) / 2).toFixed(1);
 function suggest(proj, tipo, field) {
-  // pasos según el tipo de línea: totales y puntos de equipo se mueven más que un rebote
   const steps = tipo === 'total' ? [6, 10, 15] : tipo === 'equipo' ? [4, 7, 10] : tipo === 'q1' ? [2, 4, 6] : tipo === 'q1eq' ? [1.5, 3, 4.5]
     : ({ pts: [3, 5, 8], pra: [4, 7, 10], pr: [3, 6, 9], pa: [3, 6, 9], ra: [2, 3, 5], reb: [1, 2, 3], ast: [1, 2, 3] }[field] || [1, 1.5, 2]);
   const low = steps.map(d => Math.max(0.5, Math.floor(proj - d) + 0.5));
@@ -1523,7 +1518,7 @@ function pubRefresh(defLow, defHigh) {
   $('pub-high-chips').querySelectorAll('button').forEach(b => b.onclick = () => { $('pub-high').value = b.dataset.v; });
   if (defLow != null) $('pub-low').value = lineFmt(defLow);
   if (defHigh != null) $('pub-high').value = lineFmt(defHigh);
-  if (L) {   // filas con línea + momio; se precargan las que ya se capturaron
+  if (L) {
     const m = (LINES[PUB.ctx.fecha] || []).find(x => x.key === mktKey(o, PUB.ctx));
     $('lin-rows').innerHTML = '';
     (m ? mktOpts(m) : []).forEach(x => linRow(x.dir, x.linea, x.momio));
@@ -1574,22 +1569,22 @@ $('pub-save').addEventListener('click', async () => {
   } catch (e) { console.error(e); log.innerHTML = noteHTML('No se publicó: ' + esc(e.message || ''), 'bad'); }
   finally { idle(btn); }
 });
+
 // =========================================================
-// LÍNEAS DEL ADMIN: él captura las líneas disponibles y la app recomienda la más conveniente
+// LÍNEAS DEL ADMIN
 // =========================================================
-const LINES = {};   // fecha -> mercados
-const Q1P = {};     // fecha -> { 'local|visitante': proyección del 1er cuarto }
-// variación mínima realista partido a partido (para no prometer probabilidades irreales)
+const LINES = {};
+const Q1P = {};
 const CV_MIN = { pts: 0.28, reb: 0.33, ast: 0.38, fg3m: 0.55, pra: 0.2, pr: 0.22, pa: 0.23, ra: 0.28, stl: 0.7, blk: 0.75, sb: 0.55 };
 function parseMomio(t) {
   const v = num(String(t || '').trim().replace(',', '.'));
   if (v == null) return null;
-  if (v >= 100) return 1 + v / 100;           // americano +150
-  if (v <= -100) return 1 + 100 / Math.abs(v); // americano -125
-  return v > 1 ? v : null;                     // decimal 1.80
+  if (v >= 100) return 1 + v / 100;
+  if (v <= -100) return 1 + 100 / Math.abs(v);
+  return v > 1 ? v : null;
 }
 function mktKey(o, c) { return [o.tipo, o.field || 'pts', o.teamId || '', o.tipo === 'jugador' ? normN(o.nombre || '') : '', c.local || '', c.visitante || ''].join('|'); }
-function mktOpts(m) {   // compatible con mercados guardados sin momio
+function mktOpts(m) {
   if (Array.isArray(m.opts)) return m.opts;
   return [...(m.bajas || []).map(l => ({ dir: 'mas', linea: l, momio: null })), ...(m.altas || []).map(l => ({ dir: 'menos', linea: l, momio: null }))];
 }
@@ -1627,13 +1622,12 @@ async function saveLines() {
 }
 function lineOptions(m) {
   const sd = Math.max(m.sd || 10, 0.75);
-  const cap = v => clamp(v, 0.03, 0.95);   // el modelo nunca promete más de 95%
+  const cap = v => clamp(v, 0.03, 0.95);
   return mktOpts(m).map(x => {
     const prob = cap(x.dir === 'mas' ? 1 - normCdf((x.linea - m.proj) / sd) : normCdf((x.linea - m.proj) / sd));
     return { ...x, prob, impl: x.momio ? 1 / x.momio : null, ev: x.momio ? prob * x.momio - 1 : null };
   });
 }
-// Recomendación: la línea MÁS SEGURA (mayor probabilidad DICA). El momio es solo informativo.
 const MIN_PROB = 0.55;
 function recOf(m) {
   if (!m || m.proj == null) return { best: null, opts: [], why: 'Falta calcular la recomendación' };
@@ -1653,8 +1647,6 @@ function pickCtx(p) {
   const c = { fecha: J.fecha, local: g?.local || null, visitante: g?.visitante || null };
   return { o, c, key: mktKey(o, c), title: `${p.nombre} vs ${teamName(rId)} · ${fechaLarga(J.fecha)}` };
 }
-// Calcula la proyección DICA de cada línea capturada (en la app o en el importador) y la guarda,
-// así tus usuarios ven la recomendación sin gastar lecturas extra.
 async function gameProjFor(L, A, inj) {
   const [sL, sA] = await Promise.all([getSummary(L), getSummary(A)]);
   if (!sL || !sA) return null;
@@ -1675,7 +1667,6 @@ async function q1ProjFor(L, A, inj) {
 async function refreshLineProj(fecha) {
   const list = await loadLines(fecha, true);
   const inj = await getInjuries().catch(() => null);
-  // proyección del 1er cuarto de todos los partidos de la jornada (la ven tus usuarios sin gastar lecturas)
   const q1 = {};
   for (const g of await getJornada(fecha)) { try { const r = await q1ProjFor(g.local, g.visitante, inj); if (r) q1[g.local + '|' + g.visitante] = { ...r, at: new Date().toISOString() }; } catch (e) { console.warn(e); } }
   Q1P[fecha] = q1;
@@ -1722,13 +1713,13 @@ function bindCalc() {
 }
 function renderLines() {
   const box = $('lines-out'); if (!box) return;
-  const pickKeys = new Set(currentPicks.map(p => pickCtx(p).key));   // esos ya salen dentro de su pick
+  const pickKeys = new Set(currentPicks.map(p => pickCtx(p).key));
   const list = (LINES[J.fecha] || []).filter(m => !Q1T.has(m.tipo) && !pickKeys.has(m.key) && (canCap() || m.proj != null));
   const pend = (LINES[J.fecha] || []).filter(m => !Q1T.has(m.tipo) && m.proj == null).length;
   const calcBtn = isAdmin && (LINES[J.fecha] || []).some(m => !Q1T.has(m.tipo))
     ? `<button class="btn btn-ink" id="lines-calc" style="margin-bottom:10px"><i class="fa-solid fa-calculator"></i> ${pend ? `CALCULAR RECOMENDACIONES (${pend} pendientes)` : 'RECALCULAR RECOMENDACIONES'}</button>` : '';
   if (!list.length) {
-    box.innerHTML = calcBtn + noteHTML(isAdmin ? 'Aún no capturas líneas de puntos para esta jornada. Hazlo con <b>CAPTURAR LÍNEAS</b> en Vegas 2.0 (total y puntos por equipo). Para los picks sugeridos usa el botón <b>Líneas</b> de cada pick.'
+    box.innerHTML = calcBtn + noteHTML(isAdmin ? 'Aún no capturas líneas de puntos para esta jornada. Hazlo con <b>CAPTURAR LÍNEAS</b> en Vegas 2.0 (total y puntos por equipo). Para los picks sugeridos usa el botón <b>Líneas</b> de cada pick o sube capturas arriba.'
       : 'Las líneas de esta jornada todavía no se publican. Vuelve más tarde.', 'warn');
     if (isAdmin) bindCalc();
     return;
@@ -1743,7 +1734,6 @@ function renderLines() {
     const sub = m.tipo === 'jugador' ? `${LABEL[m.field] || m.field} · ${pickMatch(m)}` : m.tipo === 'equipo' ? `Puntos del equipo · ${pickMatch(m)}` : pickMatch(m);
     const x = m.tipo === 'jugador' && inj ? injuryByName(inj, m.teamId, m.nombre, m.eid) : null;
     const R = recOf(m), r = R.best, i = all.indexOf(m);
-    const unit = m.tipo === 'jugador' ? '' : ' pts';
     let cls = '', rec, pr = '';
     if (x && x.cat === 'out') { cls = 'out'; rec = '<div class="lrec gris">JUGADOR LESIONADO · no apostar</div>'; }
     else if (!r) { cls = 'nov'; rec = `<div class="lrec gris">${esc(R.why)}</div>`; }
@@ -1787,9 +1777,384 @@ function gameOnDate(a, b) {
   return g ? { fecha: J.fecha, local: g.local, visitante: g.visitante } : { fecha: todayET(), local: null, visitante: null };
 }
 
+// =========================================================
+// LECTOR IA DE CAPTURAS PLAYDOIT (Gemini Vision)
+// =========================================================
+const GEMINI_LS = 'dica_gemini_key';
+const getGeminiKey = () => (lsGet(GEMINI_LS) || '').trim();
+
+function updateAiBoxUI() {
+  const box = $('ai-lines-box');
+  if (!box) return;
+  box.classList.toggle('hidden', !canCap());
+  const hasKey = !!getGeminiKey();
+  $('ai-keybar').classList.toggle('hidden', hasKey);
+  $('ai-key-toggle').innerHTML = hasKey
+    ? '<i class="fa-solid fa-check" style="color:var(--win)"></i> API Key lista'
+    : '<i class="fa-solid fa-key"></i> Configurar API Key';
+}
+
+$('ai-key-toggle').addEventListener('click', () => {
+  $('ai-keybar').classList.toggle('hidden');
+  if (!$('ai-keybar').classList.contains('hidden')) {
+    $('ai-key-in').value = getGeminiKey();
+    $('ai-key-in').focus();
+  }
+});
+
+$('ai-key-save').addEventListener('click', () => {
+  const val = $('ai-key-in').value.trim();
+  if (!val) { alert('Pega tu API Key de Gemini primero.'); return; }
+  lsSet(GEMINI_LS, val);
+  $('ai-key-in').value = '';
+  updateAiBoxUI();
+  const st = $('ai-status');
+  st.innerHTML = noteHTML('Llave guardada de forma segura en este dispositivo. Ya puedes subir o pegar capturas de Playdoit.');
+  st.classList.remove('hidden');
+});
+
+// Redimensiona la imagen en el navegador para que suba rápido a Gemini
+function prepareImageBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Formato de imagen no válido.'));
+      img.onload = () => {
+        const MAX_W = 1600;
+        let w = img.width, h = img.height;
+        if (w > MAX_W) { h = Math.round(h * MAX_W / w); w = MAX_W; }
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = cv.toDataURL('image/jpeg', 0.86);
+        resolve(dataUrl.split(',')[1]);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function callGeminiVision(apiKey, base64Jpeg, playerNamesHint) {
+  const prompt = `Eres un extractor experto de líneas de apuestas deportivas de NBA (casa de apuestas Playdoit / Altenar en español).
+Analiza esta captura de pantalla y extrae TODAS las líneas de jugadores y totales de partido visibles (incluyendo líneas principales y escalones alternativos).
+
+Devuelve ÚNICAMENTE un JSON válido (un arreglo de objetos) con esta estructura exacta:
+[
+  {
+    "player": "Nombre completo del jugador (o 'TOTAL_PARTIDO' si es el total de puntos del juego)",
+    "market": "código del mercado: 'pts' (puntos), 'reb' (rebotes), 'ast' (asistencias), 'fg3m' (triples), 'pra' (puntos+rebotes+asistencias), 'pr' (puntos+rebotes), 'pa' (puntos+asistencias), 'ra' (rebotes+asistencias), 'stl' (robos), 'blk' (tapones), 'sb' (robos+tapones), 'total' (total del partido)",
+    "dir": "'mas' si es Más de / Over / +, o 'menos' si es Menos de / Under / -",
+    "line": número decimal de la línea (ej. 29.5),
+    "odds": número del momio exactamente como aparece (ej. 1.28, 1.86, -115, +120)
+  }
+]
+
+Reglas importantes:
+- Si el nombre del jugador aparece abreviado (ej. "K. Towns" o "W. Carter Jr."), intenta emparejarlo con esta lista de jugadores de la jornada: ${playerNamesHint}.
+- Extrae TODOS los escalones que veas en la pantalla (tanto los de momio bajo como 1.25-1.50 como los tradicionales ~1.86, y tanto Más de como Menos de).
+- Si no hay líneas de apuestas visibles en la imagen, devuelve [].`;
+
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+  let lastErr = null;
+  for (const model of models) {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              { inline_data: { mime_type: 'image/jpeg', data: base64Jpeg } }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            responseMimeType: 'application/json'
+          }
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const msg = errData.error?.message || `Error HTTP ${res.status}`;
+        if (res.status === 404) { lastErr = new Error(msg); continue; }
+        throw new Error(msg);
+      }
+      const data = await res.json();
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+      const cleanJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+      const parsed = JSON.parse(cleanJson);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      lastErr = e;
+      if (!String(e.message || '').includes('404')) break;
+    }
+  }
+  throw lastErr || new Error('No se pudo conectar con Gemini.');
+}
+
+// Empareja el nombre que leyó la IA contra los jugadores de la jornada (soporta nombre completo o inicial + apellido)
+function matchDayPlayer(rawName, dayPlayers) {
+  const q = normN(rawName);
+  if (!q) return null;
+  let hit = dayPlayers.find(p => normN(p.nombre) === q);
+  if (hit) return hit;
+  const qParts = q.split(' ');
+  if (qParts.length >= 2) {
+    const qFirst = qParts[0][0], qLast = qParts[qParts.length - 1];
+    hit = dayPlayers.find(p => {
+      const pParts = normN(p.nombre).split(' ');
+      return pParts.length >= 2 && pParts[0][0] === qFirst && pParts[pParts.length - 1] === qLast;
+    });
+    if (hit) return hit;
+  }
+  return dayPlayers.find(p => normN(p.nombre).includes(q) || q.includes(normN(p.nombre))) || null;
+}
+
+const VALID_AI_MARKETS = new Set(['pts', 'reb', 'ast', 'fg3m', 'pra', 'pr', 'pa', 'ra', 'stl', 'blk', 'sb', 'total']);
+
+async function processPlaydoitScreenshots(fileList) {
+  const files = [...fileList].filter(f => f && f.type.startsWith('image/'));
+  if (!files.length) return;
+  const apiKey = getGeminiKey();
+  const stBox = $('ai-status');
+  stBox.classList.remove('hidden');
+
+  if (!apiKey) {
+    $('ai-keybar').classList.remove('hidden');
+    $('ai-key-in').focus();
+    stBox.innerHTML = noteHTML('Primero pega y guarda tu <b>API Key de Gemini</b> arriba para poder leer las capturas.', 'warn');
+    return;
+  }
+  if (!J.fecha) {
+    stBox.innerHTML = noteHTML('No hay una jornada seleccionada.', 'warn');
+    return;
+  }
+
+  const drop = $('ai-drop');
+  drop.style.pointerEvents = 'none';
+  drop.style.opacity = '0.65';
+
+  try {
+    stBox.innerHTML = noteHTML('<i class="fa-solid fa-spinner fa-spin"></i> Preparando proyecciones de la jornada…');
+    const [juegos, inj] = await Promise.all([getJornada(J.fecha), getInjuries().catch(() => null)]);
+    if (!juegos.length) throw new Error('Esta jornada no tiene partidos cargados.');
+
+    // Armar lista de todos los jugadores que juegan hoy con su proyección DICA
+    const rivalOf = {}, gameOfTeam = {};
+    juegos.forEach(g => {
+      rivalOf[g.local] = g.visitante;
+      rivalOf[g.visitante] = g.local;
+      gameOfTeam[g.local] = g;
+      gameOfTeam[g.visitante] = g;
+    });
+
+    const dayPlayers = [];
+    const teamIds = Object.keys(rivalOf);
+    await Promise.all(teamIds.map(async tid => {
+      const rid = rivalOf[tid];
+      const [roster, own, riv] = await Promise.all([getRoster(tid), getSummary(tid), getSummary(rid)]);
+      const js = roster?.jugadores || {};
+      const g = gameOfTeam[tid];
+      Object.keys(js).forEach(pid => {
+        const pl = js[pid];
+        const P = projectPlayer(pl, own, riv);
+        dayPlayers.push({
+          nombre: pl.nombre,
+          eid: pl.espn_id ? String(pl.espn_id) : '',
+          teamId: tid,
+          rivalId: rid,
+          local: g.local,
+          visitante: g.visitante,
+          P
+        });
+      });
+    }));
+
+    // También indexamos currentPicks por si ya estaban calculados
+    const pickMap = {};
+    currentPicks.forEach(pk => { pickMap[normN(pk.nombre) + '|' + pk.field] = pk; });
+
+    const hintNames = dayPlayers
+      .filter(p => p.P && p.P.stats.min.proj >= 14)
+      .map(p => p.nombre)
+      .slice(0, 140)
+      .join(', ');
+
+    // Leer cada captura con Gemini Vision
+    const rawExtracted = [];
+    for (let i = 0; i < files.length; i++) {
+      stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> Leyendo captura <b>${i + 1} de ${files.length}</b> con IA…`);
+      const b64 = await prepareImageBase64(files[i]);
+      const items = await callGeminiVision(apiKey, b64, hintNames);
+      rawExtracted.push(...items);
+    }
+
+    if (!rawExtracted.length) {
+      stBox.innerHTML = noteHTML('La IA no detectó líneas de jugadores en esas capturas. Asegúrate de que se vean los nombres y momios.', 'warn');
+      return;
+    }
+
+    // Filtrar contra proyecciones DICA y agrupar por mercado
+    const grouped = {}; // key -> { meta, candidates: [] }
+    let ignoredCount = 0;
+
+    for (const item of rawExtracted) {
+      const field = String(item.market || '').toLowerCase().trim();
+      const dir = String(item.dir || '').toLowerCase().trim();
+      const line = num(item.line);
+      const momio = item.odds != null ? parseMomio(String(item.odds)) : null;
+
+      if (!VALID_AI_MARKETS.has(field) || (dir !== 'mas' && dir !== 'menos') || line == null || line <= 0) {
+        ignoredCount++;
+        continue;
+      }
+      // Filtrar momios extremos (< 1.15 o > 2.25)
+      if (momio != null && (momio < 1.15 || momio > 2.25)) {
+        ignoredCount++;
+        continue;
+      }
+
+      if (field === 'total') {
+        // Si es total de partido y solo hay 1 partido o coincide con alguno
+        let targetG = juegos.length === 1 ? juegos[0] : null;
+        if (!targetG && item.player) {
+          const q = normN(item.player);
+          targetG = juegos.find(g => q.includes(normN(teamName(g.local))) || q.includes(normN(teamName(g.visitante))) || q.includes(teamAbbr(g.local).toLowerCase()) || q.includes(teamAbbr(g.visitante).toLowerCase()));
+        }
+        if (!targetG) { ignoredCount++; continue; }
+        const gp = await gameProjFor(targetG.local, targetG.visitante, inj);
+        if (!gp) { ignoredCount++; continue; }
+        const proj = +(gp.ptsL + gp.ptsA).toFixed(1);
+        const sd = +Math.max(16, Math.hypot(gp.sdL, gp.sdA)).toFixed(2);
+        // Regla DICA: Más de solo si línea < proyección; Menos de solo si línea > proyección
+        if ((dir === 'mas' && line >= proj) || (dir === 'menos' && line <= proj)) { ignoredCount++; continue; }
+        const o = { tipo: 'total', field: 'pts', teamId: targetG.local, rivalId: targetG.visitante, proj, sd };
+        const c = { fecha: J.fecha, local: targetG.local, visitante: targetG.visitante };
+        const key = mktKey(o, c);
+        if (!grouped[key]) grouped[key] = { meta: { key, ...o, ...c, nombre: null, eid: null }, candidates: [] };
+        grouped[key].candidates.push({ dir, linea: line, momio: momio ? +momio.toFixed(3) : null });
+        continue;
+      }
+
+      const pl = matchDayPlayer(item.player, dayPlayers);
+      if (!pl) { ignoredCount++; continue; }
+
+      const existingPick = pickMap[normN(pl.nombre) + '|' + field];
+      let proj = null, sd = null;
+      if (existingPick) {
+        proj = Number(existingPick.projected);
+        sd = Math.max(Number(existingPick.projected) - Number(existingPick.floor), (CV_MIN[field] || 0.35) * proj, 0.75);
+      } else if (pl.P && pl.P.stats[field]) {
+        proj = +pl.P.stats[field].proj.toFixed(1);
+        sd = +Math.max(pl.P.stats[field].sd, (CV_MIN[field] || 0.35) * proj, 0.75).toFixed(2);
+      }
+      if (proj == null) { ignoredCount++; continue; }
+
+      // REGLA CLAVE DEL USUARIO:
+      // Si la línea del casino está por DEBAJO de DICA -> solo MÁS DE
+      // Si la línea del casino está por ENCIMA de DICA -> solo MENOS DE
+      if (dir === 'mas' && line >= proj) { ignoredCount++; continue; }
+      if (dir === 'menos' && line <= proj) { ignoredCount++; continue; }
+
+      const o = { tipo: 'jugador', field, teamId: pl.teamId, rivalId: pl.rivalId, nombre: pl.nombre, eid: pl.eid, proj, sd };
+      const c = { fecha: J.fecha, local: pl.local, visitante: pl.visitante };
+      const key = mktKey(o, c);
+      if (!grouped[key]) grouped[key] = { meta: { key, ...o, ...c }, candidates: [] };
+      grouped[key].candidates.push({ dir, linea: line, momio: momio ? +momio.toFixed(3) : null });
+    }
+
+    const validKeys = Object.keys(grouped);
+    if (!validKeys.length) {
+      stBox.innerHTML = noteHTML(`Se leyeron ${rawExtracted.length} líneas en la captura, pero ninguna tenía ventaja a favor respecto a tu proyección DICA (o tenían momios fuera de rango).`, 'warn');
+      return;
+    }
+
+    // Guardar en Firebase (lineas/{fecha}), conservando hasta 3 mejores escalones por mercado
+    const ref = doc(db, 'lineas', J.fecha);
+    const snap = await getDoc(ref);
+    let currentList = snap.exists() ? (snap.data().mercados || []) : [];
+    const nowIso = new Date().toISOString();
+    let totalSavedOpts = 0;
+
+    validKeys.forEach(key => {
+      const { meta, candidates } = grouped[key];
+      // Deduplicar por (dir, linea)
+      const uniq = [];
+      candidates.forEach(cand => {
+        const idx = uniq.findIndex(u => u.dir === cand.dir && u.linea === cand.linea);
+        if (idx === -1) uniq.push(cand);
+        else if (cand.momio && !uniq[idx].momio) uniq[idx] = cand;
+      });
+      // Ordenar por probabilidad DICA y conservar máximo 3 escalones por mercado
+      const scored = lineOptions({ ...meta, opts: uniq })
+        .sort((a, b) => b.prob - a.prob)
+        .slice(0, 3)
+        .map(({ dir, linea, momio }) => ({ dir, linea, momio }));
+
+      totalSavedOpts += scored.length;
+      currentList = currentList.filter(m => m.key !== key);
+      currentList.push({
+        key: meta.key,
+        tipo: meta.tipo,
+        field: meta.field,
+        local: meta.local,
+        visitante: meta.visitante,
+        teamId: meta.teamId,
+        rivalId: meta.rivalId,
+        nombre: meta.nombre,
+        eid: meta.eid,
+        proj: +meta.proj.toFixed(1),
+        sd: +meta.sd.toFixed(2),
+        opts: scored,
+        at: nowIso
+      });
+    });
+
+    await setDoc(ref, { fecha: J.fecha, mercados: currentList }, { merge: true });
+    LINES[J.fecha] = currentList;
+    renderLines();
+    if (currentPicks.length) renderPicks();
+
+    stBox.innerHTML = noteHTML(`<b>¡Listo!</b> Se guardaron <b>${validKeys.length} mercado${validKeys.length === 1 ? '' : 's'}</b> (${totalSavedOpts} línea${totalSavedOpts === 1 ? '' : 's'} filtrada${totalSavedOpts === 1 ? '' : 's'} con ventaja DICA).${ignoredCount ? ` Se descartaron ${ignoredCount} líneas sin ventaja o fuera de rango.` : ''}`);
+  } catch (e) {
+    console.error(e);
+    stBox.innerHTML = noteHTML('Error al procesar capturas: ' + esc(e.message || 'error desconocido'), 'bad');
+  } finally {
+    drop.style.pointerEvents = '';
+    drop.style.opacity = '';
+    $('ai-file-in').value = '';
+  }
+}
+
+const aiDrop = $('ai-drop');
+aiDrop.addEventListener('click', () => $('ai-file-in').click());
+aiDrop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('ai-file-in').click(); } });
+aiDrop.addEventListener('dragover', e => { e.preventDefault(); aiDrop.classList.add('over'); });
+aiDrop.addEventListener('dragleave', () => aiDrop.classList.remove('over'));
+aiDrop.addEventListener('drop', e => {
+  e.preventDefault();
+  aiDrop.classList.remove('over');
+  if (e.dataTransfer?.files?.length) processPlaydoitScreenshots(e.dataTransfer.files);
+});
+$('ai-file-in').addEventListener('change', e => {
+  if (e.target.files?.length) processPlaydoitScreenshots(e.target.files);
+});
+window.addEventListener('paste', e => {
+  if (currentTab !== 'picks' || !canCap()) return;
+  const items = e.clipboardData?.files;
+  if (items && items.length && [...items].some(f => f.type.startsWith('image/'))) {
+    e.preventDefault();
+    processPlaydoitScreenshots(items);
+  }
+});
+
 // --- PRIMER CUARTO ---
-let q1For = null, Q1R = null;   // Q1R: historial privado del 1er cuarto (solo admin)
-// Récord privado: cada vez que calculas, se guarda la recomendación de cada línea del 1Q y luego se califica con ESPN
+let q1For = null, Q1R = null;
 async function loadQ1Rec(force) {
   if (!isAdmin) { $('q1-rec').innerHTML = ''; return; }
   if (Q1R && !force) { renderQ1Rec(); return; }
@@ -1817,7 +2182,6 @@ async function saveQ1Recs(fecha) {
   const mk = (LINES[fecha] || []).filter(m => Q1T.has(m.tipo));
   const ref = doc(db, 'privado', 'q1-' + fecha), snap = await getDoc(ref);
   const old = snap.exists() ? (snap.data().picks || []) : [];
-  // Partidos que ya empezaron: lo que se calcule ahora ya no entra al récord (para que sea un récord honesto)
   const started = new Set();
   try {
     const sb = await espnSB(fecha);
@@ -1826,7 +2190,7 @@ async function saveQ1Recs(fecha) {
       if (st && st !== 'pre') started.add(ourTeamByEspn(h?.id ?? h?.team?.id, h?.team?.abbreviation) + '|' + ourTeamByEspn(a?.id ?? a?.team?.id, a?.team?.abbreviation)); });
   } catch (e) { console.warn('No se pudo revisar si ya empezaron', e); }
   const isStarted = x => started.has(x.local + '|' + x.visitante);
-  const kept = old.filter(p => p.estado !== 'pendiente' || isStarted(p));   // calificados o de partidos ya empezados: no se tocan
+  const kept = old.filter(p => p.estado !== 'pendiente' || isStarted(p));
   const st = { saved: 0, sinVentaja: 0, sinProy: 0, empezados: 0 };
   const fresh = [];
   mk.forEach(m => {
@@ -1888,7 +2252,6 @@ function q1ResBadge(pk) {
 }
 function q1MktHTML(m, title) {
   const R = recOf(m), r = R.best;
-  // el pick que quedó guardado en tu récord para este mercado (el que cuenta)
   const pk = isAdmin ? ((Q1R || []).find(d => d.fecha === J.fecha)?.picks || []).find(p => p.key === m.key) : null;
   const same = pk && r && pk.dir === r.dir && pk.linea === r.linea;
   const rec = r ? `<div class="q1rec ${r.dir === 'menos' ? 'under' : ''}"><span class="tx"><b>${ouTxt(r)}</b> Te recomiendo esta · ${Math.round(r.prob * 100)}% de probabilidad${r.momio ? ` · momio ${r.momio.toFixed(2)}` : ''}</span>${same ? q1ResBadge(pk) : ''}</div>`
@@ -1978,7 +2341,6 @@ async function loadResultados(more) {
     if (rec) renderRecord(rec.exists() ? rec.data() : null);
     renderResultados();
     resLoaded = true;
-    // el admin no tiene que acordarse: al abrir Resultados se califican solos los picks de días ya jugados
     if (isAdmin && !more && resDocs.some(d => d.fecha <= todayET() && (d.picks || []).some(p => p.estado === 'pendiente'))) $('res-grade').click();
   } catch (e) { console.error(e); $('res-out').innerHTML = noteHTML('No se pudieron cargar los resultados.', 'bad'); }
 }
@@ -2207,7 +2569,7 @@ function renderTeamLog(s) {
 // =========================================================
 // TAB VEGAS 2.0
 // =========================================================
-let vegasSel = null;   // "local|visitante" seleccionado
+let vegasSel = null;
 
 function renderVegasGames(juegos) {
   const box = $('vg-games');
@@ -2343,6 +2705,7 @@ function renderVegas(L, A, sL, sA, p) {
   </div>
   `;
 }
+
 // =========================================================
 // MOTOR ESTADÍSTICO — JUGADORES
 // =========================================================
@@ -2350,18 +2713,16 @@ const P_KEYS = ['min', 'pts', 'reb', 'ast', 'fg3m', 'stl', 'blk', 'tov'];
 const COMBOS = { pra: ['pts', 'reb', 'ast'], pr: ['pts', 'reb'], pa: ['pts', 'ast'], ra: ['reb', 'ast'], sb: ['stl', 'blk'] };
 const LABEL = { min: 'Minutos', pts: 'Puntos', reb: 'Rebotes', ast: 'Asistencias', fg3m: 'Triples', stl: 'Robos', blk: 'Tapones', tov: 'Pérdidas', pra: 'Pts + Reb + Ast', pr: 'Pts + Reb', pa: 'Pts + Ast', ra: 'Reb + Ast', sb: 'Robos + Tapones' };
 const SHORT = { min: 'MIN', pts: 'PTS', reb: 'REB', ast: 'AST', fg3m: '3PM', stl: 'ROB', blk: 'TAP', tov: 'PÉR', pra: 'PRA', pr: 'P+R', pa: 'P+A', ra: 'R+A', sb: 'R+T' };
-// Referencia de un jugador de rotación promedio (se usa solo cuando hay muy pocos partidos)
 const P_BASE = { min: 24, pts: 11.5, reb: 4.5, ast: 2.6, fg3m: 1.3, stl: 0.8, blk: 0.5, tov: 1.4 };
 
-// Qué dato del rival ajusta cada estadística (lo que el rival PERMITE, por posesión)
 const DEF_SRC = {
   pts:  { get: r => r.ptsAgAvg, base: 'pts' },
   reb:  { get: r => r.allowed.reb, base: 'reb' },
   ast:  { get: r => r.allowed.ast, base: 'ast' },
   fg3m: { get: r => r.allowed.fg3m, base: 'fg3m' },
-  stl:  { get: r => r.avg.tov, base: 'tov' },      // si el rival pierde muchos balones, hay más robos
-  blk:  { get: r => r.avg.fga, base: 'fga' },      // más tiros del rival, más oportunidades de tapón
-  tov:  { get: r => r.allowed.tov, base: 'tov' },  // cuántas pérdidas le provoca el rival a sus oponentes
+  stl:  { get: r => r.avg.tov, base: 'tov' },
+  blk:  { get: r => r.avg.fga, base: 'fga' },
+  tov:  { get: r => r.allowed.tov, base: 'tov' },
 };
 function defFactor(k, riv) {
   if (!riv || !DEF_SRC[k]) return 1;
@@ -2374,7 +2735,7 @@ function defFactor(k, riv) {
     raw = riv.pace ? (v / riv.pace) / (lgv / LEAGUE.pace) : v / lgv;
     n = riv.n;
   }
-  raw = 1 + (raw - 1) * n / (n + 5);   // con pocos partidos del rival, el ajuste se suaviza
+  raw = 1 + (raw - 1) * n / (n + 5);
   return clamp(raw, 0.88, 1.12);
 }
 
@@ -2391,7 +2752,6 @@ function prePlayerGames(p) {
 }
 function hasHistory(p) { return !!((p?.previa && p.previa.n) || prePlayerGames(p).length); }
 
-// Valor "previo" de una estadística: temporada pasada + pretemporada (por minuto) + referencia base
 function playerPrior(p, k) {
   const prev = p?.previa && p.previa.n >= 5 ? p.previa : null;
   const pre = prePlayerGames(p);
@@ -2399,7 +2759,7 @@ function playerPrior(p, k) {
   if (prev && prev.avg?.[k] != null) parts.push([prev.avg[k], 6 * Math.min(1, prev.n / 25)]);
   if (pre.length) {
     const preMin = mean(pre.map(g => num(g.min) || 0));
-    const expMin = prev?.avg?.min ?? preMin * 1.1;     // en pretemporada los titulares juegan menos
+    const expMin = prev?.avg?.min ?? preMin * 1.1;
     const w = Math.min(pre.length, 6) * 0.35;
     if (k === 'min') parts.push([expMin, w]);
     else { const tot = pre.reduce((a, g) => a + (num(g.min) || 0), 0); const v = pre.reduce((a, g) => a + (num(g[k]) || 0), 0);
@@ -2422,7 +2782,7 @@ function projectPlayer(p, own, riv) {
   P_KEYS.forEach(k => {
     const ser = seriesOf(games, k);
     const season = n ? mean(ser) : 0, last10 = n ? mean(ser.slice(-10)) : 0;
-    const regBase = n >= 10 ? 0.55 * season + 0.45 * last10 : season;   // forma reciente pesa 45%
+    const regBase = n >= 10 ? 0.55 * season + 0.45 * last10 : season;
     const pr = playerPrior(p, k);
     const base = (regBase * n + pr.v * pr.w) / (n + pr.w);
     const sdRaw = n >= 8 ? stdev(ser) : (stdev(ser) * n + pr.sd * 6) / (n + 6);
@@ -2438,7 +2798,6 @@ function projectPlayer(p, own, riv) {
   return res;
 }
 
-// Reglas de "pick confiable" por estadística: promedio mínimo y coeficiente de variación máximo
 const PICK_RULES = {
   pts:  { min: 10,  t1: 0.22, t2: 0.32 },
   reb:  { min: 5,   t1: 0.25, t2: 0.35 },
@@ -2446,7 +2805,6 @@ const PICK_RULES = {
   fg3m: { min: 1.8, t1: 0.40, t2: 0.55 },
   pra:  { min: 20,  t1: 0.18, t2: 0.26 },
 };
-
 
 // =========================================================
 // TAB JUGADORES
@@ -2718,12 +3076,11 @@ function renderPlayerProj() {
 }
 
 // =========================================================
-// TAB PICKS: el admin calcula una vez, todos leen 1 documento
+// TAB PICKS
 // =========================================================
 let isAdmin = false, realAdmin = false, ME = '', isCapt = false;
-// Tu equipo de captura puede capturar líneas desde la app; nada más
 const canCap = () => isAdmin || isCapt;
-// El dueño puede ver la app tal cual la ve un cliente (solo cambia la pantalla; los permisos reales siguen en Firebase)
+
 $('view-btn').addEventListener('click', () => {
   if (!realAdmin) return;
   isAdmin = !isAdmin;
@@ -2733,6 +3090,7 @@ $('view-btn').addEventListener('click', () => {
   $('picks-generate').classList.toggle('hidden', !isAdmin);
   $('res-grade').classList.toggle('hidden', !isAdmin);
   $('pub-modal').classList.add('hidden');
+  updateAiBoxUI();
   if (vegasSel && $('vegas-out').innerHTML) { const [l, a] = vegasSel.split('|'); runVegas(l, a); }
   if (jug.proj && $('jug-proj-out').innerHTML) renderPlayerProj();
   if (J.fecha in LINES) renderLines();
@@ -2745,6 +3103,7 @@ let currentPicks = [], picksFilter = 'all', picksLoadedFor = null;
 
 async function loadPicks(force) {
   const f = J.fecha;
+  updateAiBoxUI();
   if (!f) { $('picks-out').innerHTML = noteHTML('Aún no hay jornadas cargadas.', 'warn'); return; }
   if (picksLoadedFor === f && !force) { if (f in LINES) renderLines(); return; }
   picksLoadedFor = f;
@@ -2841,10 +3200,10 @@ $('picks-generate').addEventListener('click', async () => {
       for (const pid of Object.keys(js)) {
         const pl = js[pid];
         const xi = injG ? injuryFor(injG, teamId, pl) : null;
-        if (xi && (xi.cat === 'out' || xi.cat === 'doubt')) continue;   // fuera o muy en duda: no entra a picks
+        if (xi && (xi.cat === 'out' || xi.cat === 'doubt')) continue;
         const P = projectPlayer(pl, own, riv);
-        if (!P || (P.n < 5 && !(pl.previa && pl.previa.n >= 20))) continue;   // pocos partidos: solo si tiene temporada pasada sólida
-        if (P.stats.min.proj < 22) continue;   // solo rotación real
+        if (!P || (P.n < 5 && !(pl.previa && pl.previa.n >= 20))) continue;
+        if (P.stats.min.proj < 22) continue;
         Object.keys(PICK_RULES).forEach(k => {
           const rule = PICK_RULES[k], st = P.stats[k];
           if (st.proj < rule.min) return;
