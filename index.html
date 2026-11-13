@@ -1813,7 +1813,6 @@ $('ai-key-save').addEventListener('click', () => {
   st.classList.remove('hidden');
 });
 
-// Redimensiona la imagen en el navegador para que suba rápido a Gemini
 function prepareImageBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1838,6 +1837,20 @@ function prepareImageBase64(file) {
   });
 }
 
+async function discoverFlashModels(apiKey) {
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+    if (!r.ok) return [];
+    const d = await r.json();
+    return (d.models || [])
+      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent') && /gemini-.*flash/i.test(m.name) && !/lite|8b|2\.0|1\.5/i.test(m.name))
+      .map(m => m.name.replace(/^models\//, ''))
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+  } catch {
+    return [];
+  }
+}
+
 async function callGeminiVision(apiKey, base64Jpeg, playerNamesHint) {
   const prompt = `Eres un extractor experto de líneas de apuestas deportivas de NBA (casa de apuestas Playdoit / Altenar en español).
 Analiza esta captura de pantalla y extrae TODAS las líneas de jugadores y totales de partido visibles (incluyendo líneas principales y escalones alternativos).
@@ -1858,46 +1871,56 @@ Reglas importantes:
 - Extrae TODOS los escalones que veas en la pantalla (tanto los de momio bajo como 1.25-1.50 como los tradicionales ~1.86, y tanto Más de como Menos de).
 - Si no hay líneas de apuestas visibles en la imagen, devuelve [].`;
 
-  const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+  const tryModel = async (model) => {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: prompt },
+            { inline_data: { mime_type: 'image/jpeg', data: base64Jpeg } }
+          ]
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: 'application/json'
+        }
+      })
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const msg = errData.error?.message || `Error HTTP ${res.status}`;
+      const err = new Error(msg);
+      err.status = res.status;
+      throw err;
+    }
+    const data = await res.json();
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    const cleanJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+    const parsed = JSON.parse(cleanJson);
+    return Array.isArray(parsed) ? parsed : [];
+  };
+
+  const candidates = ['gemini-3.8-flash'];
   let lastErr = null;
-  for (const model of models) {
+  for (let i = 0; i < candidates.length; i++) {
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: prompt },
-              { inline_data: { mime_type: 'image/jpeg', data: base64Jpeg } }
-            ]
-          }],
-          generationConfig: {
-            temperature: 0.1,
-            responseMimeType: 'application/json'
-          }
-        })
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        const msg = errData.error?.message || `Error HTTP ${res.status}`;
-        if (res.status === 404) { lastErr = new Error(msg); continue; }
-        throw new Error(msg);
-      }
-      const data = await res.json();
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-      const cleanJson = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
-      const parsed = JSON.parse(cleanJson);
-      return Array.isArray(parsed) ? parsed : [];
+      return await tryModel(candidates[i]);
     } catch (e) {
       lastErr = e;
-      if (!String(e.message || '').includes('404')) break;
+      const isModelIssue = e.status === 404 || /no longer available|not found|not supported/i.test(String(e.message || ''));
+      if (isModelIssue && i === 0) {
+        const discovered = await discoverFlashModels(apiKey);
+        discovered.forEach(m => { if (!candidates.includes(m)) candidates.push(m); });
+        continue;
+      }
+      if (!isModelIssue) break;
     }
   }
   throw lastErr || new Error('No se pudo conectar con Gemini.');
 }
 
-// Empareja el nombre que leyó la IA contra los jugadores de la jornada (soporta nombre completo o inicial + apellido)
 function matchDayPlayer(rawName, dayPlayers) {
   const q = normN(rawName);
   if (!q) return null;
@@ -1944,7 +1967,6 @@ async function processPlaydoitScreenshots(fileList) {
     const [juegos, inj] = await Promise.all([getJornada(J.fecha), getInjuries().catch(() => null)]);
     if (!juegos.length) throw new Error('Esta jornada no tiene partidos cargados.');
 
-    // Armar lista de todos los jugadores que juegan hoy con su proyección DICA
     const rivalOf = {}, gameOfTeam = {};
     juegos.forEach(g => {
       rivalOf[g.local] = g.visitante;
@@ -1975,7 +1997,6 @@ async function processPlaydoitScreenshots(fileList) {
       });
     }));
 
-    // También indexamos currentPicks por si ya estaban calculados
     const pickMap = {};
     currentPicks.forEach(pk => { pickMap[normN(pk.nombre) + '|' + pk.field] = pk; });
 
@@ -1985,7 +2006,6 @@ async function processPlaydoitScreenshots(fileList) {
       .slice(0, 140)
       .join(', ');
 
-    // Leer cada captura con Gemini Vision
     const rawExtracted = [];
     for (let i = 0; i < files.length; i++) {
       stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> Leyendo captura <b>${i + 1} de ${files.length}</b> con IA…`);
@@ -1999,8 +2019,7 @@ async function processPlaydoitScreenshots(fileList) {
       return;
     }
 
-    // Filtrar contra proyecciones DICA y agrupar por mercado
-    const grouped = {}; // key -> { meta, candidates: [] }
+    const grouped = {};
     let ignoredCount = 0;
 
     for (const item of rawExtracted) {
@@ -2013,14 +2032,12 @@ async function processPlaydoitScreenshots(fileList) {
         ignoredCount++;
         continue;
       }
-      // Filtrar momios extremos (< 1.15 o > 2.25)
       if (momio != null && (momio < 1.15 || momio > 2.25)) {
         ignoredCount++;
         continue;
       }
 
       if (field === 'total') {
-        // Si es total de partido y solo hay 1 partido o coincide con alguno
         let targetG = juegos.length === 1 ? juegos[0] : null;
         if (!targetG && item.player) {
           const q = normN(item.player);
@@ -2031,7 +2048,6 @@ async function processPlaydoitScreenshots(fileList) {
         if (!gp) { ignoredCount++; continue; }
         const proj = +(gp.ptsL + gp.ptsA).toFixed(1);
         const sd = +Math.max(16, Math.hypot(gp.sdL, gp.sdA)).toFixed(2);
-        // Regla DICA: Más de solo si línea < proyección; Menos de solo si línea > proyección
         if ((dir === 'mas' && line >= proj) || (dir === 'menos' && line <= proj)) { ignoredCount++; continue; }
         const o = { tipo: 'total', field: 'pts', teamId: targetG.local, rivalId: targetG.visitante, proj, sd };
         const c = { fecha: J.fecha, local: targetG.local, visitante: targetG.visitante };
@@ -2055,9 +2071,6 @@ async function processPlaydoitScreenshots(fileList) {
       }
       if (proj == null) { ignoredCount++; continue; }
 
-      // REGLA CLAVE DEL USUARIO:
-      // Si la línea del casino está por DEBAJO de DICA -> solo MÁS DE
-      // Si la línea del casino está por ENCIMA de DICA -> solo MENOS DE
       if (dir === 'mas' && line >= proj) { ignoredCount++; continue; }
       if (dir === 'menos' && line <= proj) { ignoredCount++; continue; }
 
@@ -2074,7 +2087,6 @@ async function processPlaydoitScreenshots(fileList) {
       return;
     }
 
-    // Guardar en Firebase (lineas/{fecha}), conservando hasta 3 mejores escalones por mercado
     const ref = doc(db, 'lineas', J.fecha);
     const snap = await getDoc(ref);
     let currentList = snap.exists() ? (snap.data().mercados || []) : [];
@@ -2083,14 +2095,12 @@ async function processPlaydoitScreenshots(fileList) {
 
     validKeys.forEach(key => {
       const { meta, candidates } = grouped[key];
-      // Deduplicar por (dir, linea)
       const uniq = [];
       candidates.forEach(cand => {
         const idx = uniq.findIndex(u => u.dir === cand.dir && u.linea === cand.linea);
         if (idx === -1) uniq.push(cand);
         else if (cand.momio && !uniq[idx].momio) uniq[idx] = cand;
       });
-      // Ordenar por probabilidad DICA y conservar máximo 3 escalones por mercado
       const scored = lineOptions({ ...meta, opts: uniq })
         .sort((a, b) => b.prob - a.prob)
         .slice(0, 3)
