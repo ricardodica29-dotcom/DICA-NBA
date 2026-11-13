@@ -83,6 +83,10 @@ button{background:none;border:0;cursor:pointer}
 .grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
 .grid3>div{min-width:0}
 @media (max-width:520px){.grid3{grid-template-columns:repeat(2,minmax(0,1fr))}.grid3 .wide{grid-column:span 2}}
+.sub-box{background:var(--bg-2);border:1px solid var(--line-soft);border-radius:4px;padding:12px;margin-bottom:12px}
+.sub-title{font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--blue);margin-bottom:8px}
+.row-inline{display:grid;grid-template-columns:160px 1fr;gap:10px;align-items:end}
+@media (max-width:520px){.row-inline{grid-template-columns:1fr}}
 
 .dropzone{border:2px dashed var(--line);border-radius:4px;padding:30px 16px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
 .dropzone:hover,.dropzone.over{border-color:var(--blue);background:var(--blue-soft)}
@@ -180,7 +184,6 @@ td{padding:8px 10px;border-top:1px solid var(--line-soft)}
       <div class="wm"><svg width="36" height="36" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#1c1712"/><circle cx="50" cy="50" r="34" fill="#c9481a"/><path d="M50 16v68M16 50h68M27 25a34 34 0 0 1 0 50M73 25a34 34 0 0 0 0 50" fill="none" stroke="#1c1712" stroke-width="3"/><path d="M38 33h12a17 17 0 0 1 0 34H38z" fill="#fbf6ec" stroke="#1c1712" stroke-width="3" stroke-linejoin="round"/></svg><div>DICA NBA<small id="role-sub">Importador · By: Ricardo Dionicio</small></div></div>
       <button class="icon-btn" id="logout-btn" aria-label="Cerrar sesión"><i class="fa-solid fa-power-off"></i></button>
     </div>
-    
   </header>
 
   <div class="wrap">
@@ -197,7 +200,7 @@ td{padding:8px 10px;border-top:1px solid var(--line-soft)}
 
     <!-- EQUIPO -->
     <div class="panel" id="team-card">
-      <div class="panel-h"><span class="n">1</span><h2>Equipo</h2></div>
+      <div class="panel-h"><span class="n">1</span><h2>Equipo <span id="team-opt-tag" class="hidden" style="font-family:var(--body);font-size:12px;font-weight:600;color:var(--faint)">(solo necesario si traes 1 equipo o subes CSV sin columna Equipo)</span></h2></div>
       <select class="select" id="team-selector"><option value="">Cargando equipos…</option></select>
       <p class="small hidden" id="no-teams" style="color:var(--warn)">Todavía no hay equipos. Empieza por el modo "Equipos".</p>
     </div>
@@ -215,13 +218,27 @@ td{padding:8px 10px;border-top:1px solid var(--line-soft)}
       </div>
 
       <div id="espn-games" class="hidden">
-        <div class="grid3">
-          <div><label class="lbl" for="espn-season">Temporada</label><input class="input sm" id="espn-season" type="number"></div>
-          <div><label class="lbl" for="espn-type">Fase</label><select class="select sm" id="espn-type"><option value="2">Temporada regular</option><option value="5">Play-in</option><option value="3">Playoffs</option></select></div>
-          <div class="wide"><label class="lbl" for="espn-date">Fecha (opcional)</label><input class="input sm" id="espn-date" type="date"></div>
+        <!-- NUEVO: JORNADA COMPLETA EN UN SOLO CLIC -->
+        <div class="sub-box">
+          <div class="sub-title"><i class="fa-solid fa-bolt"></i> Jornada completa (todos los partidos del día)</div>
+          <div class="row-inline">
+            <div><label class="lbl" for="espn-all-date">Fecha de la jornada</label><input class="input sm" id="espn-all-date" type="date"></div>
+            <button class="btn btn-primary" style="height:38px" id="espn-all-btn"><i class="fa-solid fa-layer-group"></i> <span id="espn-all-label">Traer stats de TODOS los equipos del día</span></button>
+          </div>
+          <p class="small" style="margin-top:6px">Trae en un solo paso los resultados de todos los partidos ya terminados de esa fecha sin tener que elegir equipo por equipo.</p>
         </div>
-        <p class="hint">La temporada 2026-27 se escribe 2027. Deja la fecha vacía para traer todos los partidos ya jugados.</p>
-        <button class="btn btn-blue" id="espn-games-btn"><i class="fa-solid fa-download"></i> Traer estadísticas</button>
+
+        <!-- OPCIÓN INDIVIDUAL EXISTENTE -->
+        <div class="sub-box" style="margin-bottom:0">
+          <div class="sub-title" style="color:var(--muted)">O traer de un solo equipo (requiere elegirlo arriba)</div>
+          <div class="grid3">
+            <div><label class="lbl" for="espn-season">Temporada</label><input class="input sm" id="espn-season" type="number"></div>
+            <div><label class="lbl" for="espn-type">Fase</label><select class="select sm" id="espn-type"><option value="2">Temporada regular</option><option value="5">Play-in</option><option value="3">Playoffs</option></select></div>
+            <div class="wide"><label class="lbl" for="espn-date">Fecha (opcional)</label><input class="input sm" id="espn-date" type="date"></div>
+          </div>
+          <p class="hint">La temporada 2026-27 se escribe 2027. Deja la fecha vacía para traer todos los partidos ya jugados del equipo elegido.</p>
+          <button class="btn btn-blue" id="espn-games-btn"><i class="fa-solid fa-download"></i> Traer estadísticas del equipo elegido</button>
+        </div>
       </div>
 
       <div id="espn-day" class="hidden">
@@ -387,6 +404,7 @@ const P_STATS = [['min','Minutos',['mp','minutes']],['pts','Puntos',['points']],
   ['fgm','Tiros de campo anotados',['fg']],['fga','Tiros de campo intentados',['fga']],['fg3a','Triples intentados',['3pa']],
   ['ftm','Tiros libres anotados',['ft']],['fta','Tiros libres intentados',['fta']],['oreb','Rebotes ofensivos',['orb']]];
 const PLAYER_STAT_FIELDS = [
+  F('equipo', 'Equipo', false, ['team', 'team_id', 'abrev']),
   F('nombre', 'Nombre del jugador', true, ['name', 'player', 'jugador']),
   F('fecha', 'Fecha del partido', true, ['date', 'dia', 'día']),
   F('rival', 'Rival', false, ['opp', 'opponent']),
@@ -398,6 +416,7 @@ const T_STATS = [['fgm','Tiros de campo anotados'],['fga','Tiros de campo intent
   ['ftm','Tiros libres anotados'],['fta','Tiros libres intentados'],['oreb','Rebotes ofensivos'],['reb','Rebotes'],['ast','Asistencias'],
   ['tov','Pérdidas'],['stl','Robos'],['blk','Tapones']];
 const TEAM_STAT_FIELDS = [
+  F('equipo', 'Equipo', false, ['team', 'team_id', 'abrev']),
   F('fecha', 'Fecha del partido', true, ['date', 'dia', 'día']),
   F('rival', 'Rival', false, ['opp', 'opponent']),
   F('sede', 'Local / Visita', false, ['home/away', 'venue']),
@@ -421,8 +440,8 @@ const USUARIOS_FIELDS = [
 const MODES = {
   'equipos':      { fields: TEAM_FIELDS, pk: 'nombre', team: false, espn: 'teams', rowLabel: 'equipos', hint: 'Una fila por equipo. Lo más rápido es el botón de ESPN de arriba.', up: 'Guardar equipos', replace: null },
   'roster':       { fields: PLAYER_FIELDS, pk: 'nombre', team: true, espn: 'roster', rowLabel: 'jugadores', hint: 'Una fila por jugador del equipo elegido.', up: 'Guardar roster', replace: 'Reemplazar el roster actual. Los jugadores que ya no estén en la lista se eliminan; los que sigan conservan sus partidos.' },
-  'player-stats': { fields: PLAYER_STAT_FIELDS, pk: 'nombre', team: true, espn: 'games', rowLabel: 'filas', hint: 'Una fila por jugador y partido. Puede incluir muchas fechas en el mismo archivo.', up: 'Guardar estadísticas de jugadores', replace: 'Sobrescribir partidos que ya existían (en vez de solo completar los campos incluidos).' },
-  'team-stats':   { fields: TEAM_STAT_FIELDS, pk: 'fecha', team: true, espn: 'games', rowLabel: 'partidos', hint: 'Una fila por partido del equipo elegido. Incluye las columnas "en contra" para que el modelo mida defensa y ritmo.', up: 'Guardar estadísticas del equipo', replace: 'Sobrescribir partidos que ya existían (en vez de solo completar los campos incluidos).' },
+  'player-stats': { fields: PLAYER_STAT_FIELDS, pk: 'nombre', team: true, espn: 'games', rowLabel: 'filas', hint: 'Una fila por jugador y partido. Puede incluir varios equipos y fechas en el mismo archivo.', up: 'Guardar estadísticas de jugadores', replace: 'Sobrescribir partidos que ya existían (en vez de solo completar los campos incluidos).' },
+  'team-stats':   { fields: TEAM_STAT_FIELDS, pk: 'fecha', team: true, espn: 'games', rowLabel: 'partidos', hint: 'Una fila por partido y equipo. Incluye las columnas "en contra" para que el modelo mida defensa y ritmo.', up: 'Guardar estadísticas de equipos', replace: 'Sobrescribir partidos que ya existían (en vez de solo completar los campos incluidos).' },
   'partidos':     { fields: PARTIDOS_FIELDS, pk: 'fecha', team: false, espn: 'day', rowLabel: 'partidos', hint: 'Una fila por partido: fecha, local y visitante. Usa el nombre o la abreviatura del equipo.', up: 'Guardar partidos', replace: 'Reemplazar los partidos de esa fecha si ya existían.' },
   'usuarios':     { fields: USUARIOS_FIELDS, pk: 'correo', team: false, espn: null, rowLabel: 'usuarios', hint: 'Opcional, para dar de alta a muchos usuarios a la vez: una fila por usuario con su correo y la fecha en que vence su acceso.', up: 'Guardar vencimientos', replace: null },
   'previo':       { fields: [], pk: 'x', team: false, espn: null, special: true, rowLabel: '', hint: '', up: '', replace: null },
@@ -430,7 +449,7 @@ const MODES = {
 };
 
 let mode = 'equipos';
-let ROLE = 'admin', ME = '';   // 'capturista' = tu equipo: solo puede llenar líneas
+let ROLE = 'admin', ME = '';
 let parsedRows = [], fileHeaders = [], columnMap = {};
 const cfg = () => MODES[mode];
 
@@ -441,7 +460,7 @@ function normalizeFecha(v) {
   const s = String(v ?? '').trim(); if (!s) return '';
   let m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
   if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
-  m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/);   // formato México: DD/MM/AAAA
+  m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/);
   if (m) return `${m[3].length === 2 ? '20' + m[3] : m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
   return slugify(s);
 }
@@ -500,10 +519,10 @@ $('login-form').addEventListener('submit', async (e) => {
 $('logout-btn').addEventListener('click', () => signOut(auth));
 
 // ---------- Equipos (liga/equipos) ----------
-let teamList = {};   // { id: {nombre, abrev, espn_id} }
+let teamList = {};
 // ---------- Líneas del día (plantilla editable en el celular) ----------
 const LN_STATS = [['pts', 'PTS'], ['reb', 'REB'], ['ast', 'AST'], ['pra', 'PRA'], ['fg3m', '3PM'], ['pr', 'P+R'], ['pa', 'P+A'], ['ra', 'R+A']];
-const LN_SHOW = 9;   // jugadores visibles por equipo antes de "ver todos"
+const LN_SHOW = 9;
 let LN = { fecha: null, games: [], rosters: {}, existing: [] };
 const lnNum = v => num(String(v ?? '').trim().replace(',', '.'));
 function lnMomio(t) {
@@ -681,13 +700,19 @@ function localTeamByName(name) {
   if (!nba) return null;
   return Object.keys(teamList).find(k => Number(teamList[k].espn_id) === nba.id || normName(teamList[k].nombre) === normName(nba.nombre)) || null;
 }
+function resolveTeamId(val) {
+  if (!val) return selTeamId();
+  if (teamList[val]) return val;
+  return localTeamByName(val);
+}
 
 // ---------- Modo ----------
 function applyMode() {
-  if (ROLE === 'capturista') mode = 'lineas';   // tu equipo no puede entrar a ningún otro modo
+  if (ROLE === 'capturista') mode = 'lineas';
   const c = cfg();
   document.querySelectorAll('.mode').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   $('team-card').classList.toggle('hidden', !c.team);
+  $('team-opt-tag').classList.toggle('hidden', c.espn !== 'games');
   $('espn-card').classList.toggle('hidden', !c.espn);
   $('prev-card').classList.toggle('hidden', mode !== 'previo');
   $('lines-card').classList.toggle('hidden', mode !== 'lineas');
@@ -696,13 +721,17 @@ function applyMode() {
   if (mode === 'usuarios') { loadAlerts(); loadCapt(); }
   $('file-card').classList.toggle('hidden', !!c.special);
   ['teams', 'roster', 'games', 'day'].forEach(k => $('espn-' + k).classList.toggle('hidden', c.espn !== k));
+  if (c.espn === 'games') {
+    $('espn-all-label').textContent = mode === 'player-stats'
+      ? 'Traer stats de TODOS los jugadores del día'
+      : 'Traer stats de TODOS los equipos del día';
+  }
   $('espn-log').innerHTML = '';
   $('step-hint').textContent = c.hint;
   $('upload-text').textContent = c.up;
   $('replace-box').classList.toggle('hidden', !c.replace);
   $('replace-label').textContent = c.replace || '';
   $('replace').checked = false;
-  // numeración de pasos según si hay paso de equipo
   const base = c.team ? 2 : 1;
   $('n-file').textContent = base; $('n-map').textContent = base + 1; $('n-prev').textContent = base + 2; $('n-up').textContent = base + 3;
   resetFile();
@@ -865,55 +894,95 @@ async function saveRoster(teamId, recs, log) {
   if (dups.length) log(`Nombres repetidos: ${esc(dups.join(', '))}. Se guardaron todos; revisa que no sea el mismo jugador dos veces.`, 'info');
 }
 
-async function savePlayerStats(teamId, recs, log) {
-  const ref = doc(db, 'rosters', teamId);
-  const snap = await getDoc(ref);
-  const data = snap.exists() ? snap.data() : null;
-  const js = data?.jugadores || {};
-  if (!Object.keys(js).length) throw new Error('Este equipo no tiene roster. Súbelo primero en el modo "Rosters".');
-  const byName = {}, byEspn = {};
-  Object.keys(js).forEach(id => { byName[normName(js[id].nombre)] = id; if (js[id].espn_id) byEspn[String(js[id].espn_id)] = id; });
+// Soporta tanto 1 solo equipo como varios equipos en el mismo lote
+async function savePlayerStats(defaultTeamId, recs, log) {
+  const byTeam = {};
+  recs.forEach(r => {
+    const tid = resolveTeamId(r.equipo) || defaultTeamId;
+    if (!tid) return;
+    (byTeam[tid] = byTeam[tid] || []).push(r);
+  });
+  const teamIds = Object.keys(byTeam);
+  if (!teamIds.length) throw new Error('No se pudo identificar el equipo de las filas.');
+
   const overwrite = $('replace').checked;
   const keys = P_STATS.map(s => s[0]);
-  let saved = 0; const unmatched = new Set(), fechas = new Set();
-  recs.forEach(r => {
-    const fecha = normalizeFecha(r.fecha); if (!fecha) return;
-    let pid = (r.espn_id && byEspn[String(r.espn_id)]) || byName[normName(r.nombre)];
-    if (!pid) {   // coincidencia tolerante por apellido
-      let best = null, bs = 0; Object.keys(js).forEach(id => { const s = similarity(r.nombre, js[id].nombre); if (s > bs) { bs = s; best = id; } });
-      if (bs >= 0.8) pid = best;
+  let totalSaved = 0;
+  const unmatched = new Set(), fechas = new Set(), sinRoster = [];
+
+  for (const teamId of teamIds) {
+    const ref = doc(db, 'rosters', teamId);
+    const snap = await getDoc(ref);
+    const data = snap.exists() ? snap.data() : null;
+    const js = data?.jugadores || {};
+    if (!Object.keys(js).length) {
+      if (teamIds.length === 1) throw new Error('Este equipo no tiene roster. Súbelo primero en el modo "Rosters".');
+      sinRoster.push(teamList[teamId]?.nombre || teamId);
+      continue;
     }
-    if (!pid) { unmatched.add(r.nombre); return; }
-    const rec = statRecord(r, keys);
-    js[pid].juegos = js[pid].juegos || {};
-    js[pid].juegos[fecha] = overwrite ? rec : { ...(js[pid].juegos[fecha] || {}), ...rec };
-    saved++; fechas.add(fecha);
-  });
-  if (!saved) throw new Error('Ninguna fila coincidió con el roster (revisa nombre y fecha).');
-  const bytes = checkSize(data, 'El roster con sus partidos');
-  await setDoc(ref, data);
-  log(`${saved} líneas guardadas en ${fechas.size} fechas para ${esc(selTeamName())}. Documento: ${Math.round(bytes / 1024)} KB de 1024 KB.`);
+    const byName = {}, byEspn = {};
+    Object.keys(js).forEach(id => { byName[normName(js[id].nombre)] = id; if (js[id].espn_id) byEspn[String(js[id].espn_id)] = id; });
+    let saved = 0;
+    byTeam[teamId].forEach(r => {
+      const fecha = normalizeFecha(r.fecha); if (!fecha) return;
+      let pid = (r.espn_id && byEspn[String(r.espn_id)]) || byName[normName(r.nombre)];
+      if (!pid) {
+        let best = null, bs = 0; Object.keys(js).forEach(id => { const s = similarity(r.nombre, js[id].nombre); if (s > bs) { bs = s; best = id; } });
+        if (bs >= 0.8) pid = best;
+      }
+      if (!pid) { unmatched.add(r.nombre); return; }
+      const rec = statRecord(r, keys);
+      js[pid].juegos = js[pid].juegos || {};
+      js[pid].juegos[fecha] = overwrite ? rec : { ...(js[pid].juegos[fecha] || {}), ...rec };
+      saved++; totalSaved++; fechas.add(fecha);
+    });
+    if (saved) {
+      checkSize(data, `El roster de ${teamList[teamId]?.nombre || teamId}`);
+      await setDoc(ref, data);
+    }
+  }
+  if (!totalSaved) throw new Error('Ninguna fila coincidió con los rosters (revisa nombre y fecha).');
+  const desc = teamIds.length === 1 ? esc(teamList[teamIds[0]]?.nombre || selTeamName()) : `${teamIds.length} equipos`;
+  log(`${totalSaved} líneas de jugador guardadas en ${fechas.size} ${fechas.size === 1 ? 'fecha' : 'fechas'} (${desc}).`);
+  if (sinRoster.length) log(`Equipos sin roster cargado (se saltaron): ${esc(sinRoster.join(', '))}.`, 'info');
   if (unmatched.size) log(`Sin coincidencia en el roster: ${esc([...unmatched].join(', '))}.`, 'info');
 }
 
-async function saveTeamStats(teamId, recs, log) {
-  const ref = doc(db, 'equipos', teamId);
-  const snap = await getDoc(ref);
-  const data = snap.exists() ? snap.data() : { ...(teamList[teamId] || { nombre: selTeamName() }) };
-  data.juegos = data.juegos || {};
+// Soporta tanto 1 solo equipo como varios equipos en el mismo lote
+async function saveTeamStats(defaultTeamId, recs, log) {
+  const byTeam = {};
+  recs.forEach(r => {
+    const tid = resolveTeamId(r.equipo) || defaultTeamId;
+    if (!tid) return;
+    (byTeam[tid] = byTeam[tid] || []).push(r);
+  });
+  const teamIds = Object.keys(byTeam);
+  if (!teamIds.length) throw new Error('No se pudo identificar el equipo de las filas.');
+
   const overwrite = $('replace').checked;
   const keys = ['pts', 'pts_allowed', 'q1', 'q1_allowed', ...T_STATS.map(s => s[0]), ...T_STATS.map(s => s[0] + '_allowed')];
-  let saved = 0;
-  recs.forEach(r => {
-    const fecha = normalizeFecha(r.fecha); if (!fecha) return;
-    const rec = statRecord(r, keys);
-    data.juegos[fecha] = overwrite ? rec : { ...(data.juegos[fecha] || {}), ...rec };
-    saved++;
-  });
-  if (!saved) throw new Error('Ninguna fila válida (revisa la columna de fecha).');
-  const bytes = checkSize(data, 'El documento del equipo');
-  await setDoc(ref, data);
-  log(`${saved} partidos guardados para ${esc(selTeamName())} (${Object.keys(data.juegos).length} en total, ${Math.round(bytes / 1024)} KB).`);
+  let totalSaved = 0;
+
+  for (const teamId of teamIds) {
+    const ref = doc(db, 'equipos', teamId);
+    const snap = await getDoc(ref);
+    const data = snap.exists() ? snap.data() : { ...(teamList[teamId] || { nombre: selTeamName() }) };
+    data.juegos = data.juegos || {};
+    let saved = 0;
+    byTeam[teamId].forEach(r => {
+      const fecha = normalizeFecha(r.fecha); if (!fecha) return;
+      const rec = statRecord(r, keys);
+      data.juegos[fecha] = overwrite ? rec : { ...(data.juegos[fecha] || {}), ...rec };
+      saved++; totalSaved++;
+    });
+    if (saved) {
+      checkSize(data, `El documento de ${teamList[teamId]?.nombre || teamId}`);
+      await setDoc(ref, data);
+    }
+  }
+  if (!totalSaved) throw new Error('Ninguna fila válida (revisa la columna de fecha).');
+  const desc = teamIds.length === 1 ? esc(teamList[teamIds[0]]?.nombre || selTeamName()) : `${teamIds.length} equipos`;
+  log(`${totalSaved} partidos guardados para ${desc}.`);
 }
 
 async function savePartidos(recs, log) {
@@ -948,7 +1017,6 @@ async function saveUsuarios(recs, log) {
     if (!r.correo || !r.vence) return;
     const vence = normalizeFecha(r.vence);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(vence)) { malas.push(r.correo); return; }
-    // vence_ts = fin de ese día en hora de México; las reglas de Firestore lo comparan con la hora actual
     const vence_ts = Timestamp.fromDate(new Date(`${vence}T23:59:59-06:00`));
     batch.set(doc(db, 'acceso_usuarios', r.correo.trim().toLowerCase()), { vence, vence_ts }, { merge: true });
     n++;
@@ -961,10 +1029,11 @@ async function saveUsuarios(recs, log) {
 
 $('upload-btn').addEventListener('click', async () => {
   const c = cfg();
-  if (c.team && !selTeamId()) return alert('Elige un equipo.');
   if (!columnMap[c.pk]) return alert(`Empareja la columna "${c.fields.find(f => f.key === c.pk).label}".`);
   const recs = records();
   if (!recs.length) return alert('No hay filas válidas.');
+  const hasRowTeams = (mode === 'team-stats' || mode === 'player-stats') && recs.every(r => resolveTeamId(r.equipo));
+  if (c.team && !selTeamId() && !hasRowTeams) return alert('Elige un equipo.');
   const btn = $('upload-btn'); busy(btn, 'Guardando…');
   const el = $('upload-log'); el.innerHTML = ''; el.classList.remove('hidden');
   const log = logger(el);
@@ -1003,8 +1072,10 @@ async function espnSummary(eventId) {
   return summaryCache[eventId];
 }
 const now = new Date();
+const todayEt = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 $('espn-season').value = now.getMonth() >= 8 ? now.getFullYear() + 1 : now.getFullYear();
-$('espn-day-date').value = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+$('espn-day-date').value = todayEt;
+$('espn-all-date').value = todayEt;
 
 // Equipos
 $('espn-teams-btn').addEventListener('click', () => {
@@ -1070,16 +1141,131 @@ function teamTotals(summary, espnId) {
   lines.forEach(l => TOT_KEYS.forEach(k => tot[k] += l[k] || 0));
   const tb = (summary.boxscore?.teams || []).find(t => String(t.team?.id) === String(espnId));
   const ts = name => { const s = (tb?.statistics || []).find(x => x.name === name); const v = s ? Number(s.displayValue) : NaN; return Number.isFinite(v) ? v : null; };
-  const reb = ts('totalRebounds'); if (reb != null) tot.reb = reb;          // incluye rebotes de equipo
+  const reb = ts('totalRebounds'); if (reb != null) tot.reb = reb;
   const tov = ts('totalTurnovers') ?? ts('turnovers'); if (tov != null) tot.tov = tov;
   const comp = summary.header?.competitions?.[0]?.competitors || [];
   const me = comp.find(c => String(c.id ?? c.team?.id) === String(espnId));
   if (me && Number.isFinite(Number(me.score))) tot.pts = Number(me.score);
   const q = me?.linescores?.[0]; const qv = Number(q?.value ?? q?.displayValue);
-  if (Number.isFinite(qv)) tot.q1 = qv;   // puntos del 1er cuarto
+  if (Number.isFinite(qv)) tot.q1 = qv;
   return { tot, lines, ok: lines.length > 0 };
 }
 
+// NUEVO: Traer TODOS los equipos o TODOS los jugadores de una jornada completa
+$('espn-all-btn').addEventListener('click', async () => {
+  const fecha = $('espn-all-date').value;
+  if (!fecha) return alert('Elige la fecha de la jornada.');
+  if (!Object.keys(teamList).length) return alert('Primero carga los equipos en el modo "Equipos".');
+  const btn = $('espn-all-btn'); busy(btn, 'Buscando jornada…'); $('espn-log').innerHTML = '';
+  try {
+    const d = await espnJson(`${ESPN}/scoreboard?dates=${fecha.replace(/-/g, '')}`);
+    const allEvs = d.events || [];
+    const completed = allEvs.filter(e => e.competitions?.[0]?.status?.type?.completed);
+    const pending = allEvs.length - completed.length;
+    if (!completed.length) {
+      throw new Error(pending > 0 ? `Los ${pending} partidos de esa fecha aún no terminan.` : 'ESPN no tiene partidos NBA en esa fecha.');
+    }
+    if (pending > 0) espnLog(`${pending} ${pending === 1 ? 'partido aún no termina' : 'partidos aún no terminan'} y se omitieron.`, 'info');
+    espnLog(`${completed.length} ${completed.length === 1 ? 'partido terminado' : 'partidos terminados'}. Leyendo box scores…`, 'info');
+
+    const games = [];
+    for (let i = 0; i < completed.length; i += 4) {
+      const chunk = completed.slice(i, i + 4);
+      const sums = await Promise.all(chunk.map(e => espnSummary(e.id).catch(() => null)));
+      chunk.forEach((e, j) => {
+        if (!sums[j]) return;
+        const comp = e.competitions[0].competitors || [];
+        const h = comp.find(c => c.homeAway === 'home'), a = comp.find(c => c.homeAway === 'away');
+        if (!h || !a) return;
+        games.push({
+          fecha: etDate(e.date),
+          homeEspn: Number(h.id ?? h.team?.id),
+          awayEspn: Number(a.id ?? a.team?.id),
+          s: sums[j]
+        });
+      });
+      btn.innerHTML = `<span class="spin"></span> ${Math.min(i + 4, completed.length)} de ${completed.length}`;
+    }
+
+    if (mode === 'team-stats') buildAllTeamRows(games, fecha);
+    else await buildAllPlayerRows(games, fecha);
+  } catch (e) { console.error(e); espnLog(esc(e.message), 'bad'); }
+  finally { idle(btn); }
+});
+
+function buildAllTeamRows(games, fechaLabel) {
+  const rows = [], missing = new Set();
+  games.forEach(({ fecha, homeEspn, awayEspn, s }) => {
+    const H = localTeamByEspn(homeEspn), A = localTeamByEspn(awayEspn);
+    const hBox = teamTotals(s, homeEspn), aBox = teamTotals(s, awayEspn);
+    if (!hBox.ok || !aBox.ok) return;
+
+    const pushSide = (me, rival, us, them, sede) => {
+      if (!me?.id) { missing.add(me?.nombre || 'Desconocido'); return; }
+      const row = {
+        equipo: me.nombre, fecha, rival: rival?.abrev || '', sede,
+        pts: us.tot.pts, pts_allowed: them.tot.pts,
+        q1: us.tot.q1 ?? '', q1_allowed: them.tot.q1 ?? ''
+      };
+      T_STATS.forEach(([k]) => { row[k] = us.tot[k]; row[k + '_allowed'] = them.tot[k]; });
+      rows.push(row);
+    };
+    pushSide(A, H, aBox, hBox, 'V');
+    pushSide(H, A, hBox, aBox, 'L');
+  });
+  if (!rows.length) throw new Error('ESPN aún no tiene el box score de esos partidos.');
+  loadRows(rows, Object.keys(rows[0]));
+  setSource(`<i class="fa-solid fa-satellite-dish"></i> ESPN Jornada ${esc(fechaLabel)}: ${rows.length} equipos (${games.length} partidos)`);
+  espnLog(`${rows.length} equipos listos para guardar (${games.length} partidos).`);
+  if (missing.size) espnLog(`Equipos no encontrados en tu base: ${esc([...missing].join(', '))}.`, 'bad');
+}
+
+async function buildAllPlayerRows(games, fechaLabel) {
+  const neededTeamIds = new Set();
+  games.forEach(({ homeEspn, awayEspn }) => {
+    const H = localTeamByEspn(homeEspn), A = localTeamByEspn(awayEspn);
+    if (H?.id) neededTeamIds.add(H.id);
+    if (A?.id) neededTeamIds.add(A.id);
+  });
+  const rostersByTeam = {};
+  await Promise.all([...neededTeamIds].map(async tid => {
+    const snap = await getDoc(doc(db, 'rosters', tid));
+    const js = snap.exists() ? (snap.data().jugadores || {}) : {};
+    rostersByTeam[tid] = Object.keys(js).map(id => ({ id, nombre: js[id].nombre, espn_id: js[id].espn_id ? String(js[id].espn_id) : '' }));
+  }));
+
+  const rows = [], outside = new Set(), sinRoster = new Set();
+  games.forEach(({ fecha, homeEspn, awayEspn, s }) => {
+    const H = localTeamByEspn(homeEspn), A = localTeamByEspn(awayEspn);
+    const processSide = (me, rival, espnId, sede) => {
+      if (!me?.id) return;
+      const roster = rostersByTeam[me.id] || [];
+      if (!roster.length) { sinRoster.add(me.nombre); return; }
+      const { lines } = teamTotals(s, espnId);
+      lines.forEach(l => {
+        let p = roster.find(r => r.espn_id && r.espn_id === l.espnId);
+        if (!p) { let best = null, bs = 0; roster.forEach(r => { const sc = similarity(r.nombre, l.name); if (sc > bs) { bs = sc; best = r; } }); if (bs >= 0.8) p = best; }
+        if (!p) { outside.add(`${l.name} (${me.abrev})`); return; }
+        rows.push({
+          equipo: me.nombre, nombre: p.nombre, fecha, rival: rival?.abrev || '', sede,
+          min: l.min, pts: l.pts, reb: l.reb, ast: l.ast, fg3m: l.fg3m, stl: l.stl, blk: l.blk, tov: l.tov,
+          fgm: l.fgm, fga: l.fga, fg3a: l.fg3a, ftm: l.ftm, fta: l.fta, oreb: l.oreb, espn_id: l.espnId
+        });
+      });
+    };
+    processSide(A, H, awayEspn, 'V');
+    processSide(H, A, homeEspn, 'L');
+  });
+
+  if (!rows.length) throw new Error('Ningún jugador coincidió con tus rosters (revisa que los equipos tengan roster cargado).');
+  loadRows(rows, Object.keys(rows[0]));
+  setSource(`<i class="fa-solid fa-satellite-dish"></i> ESPN Jornada ${esc(fechaLabel)}: ${rows.length} jugadores (${games.length} partidos)`);
+  espnLog(`${rows.length} líneas de jugador listas en ${games.length} partidos.`);
+  if (sinRoster.size) espnLog(`Equipos sin roster cargado (se omitieron): ${esc([...sinRoster].join(', '))}.`, 'info');
+  if (outside.size) espnLog(`Jugaron pero no están en tu roster: ${esc([...outside].join(', '))}.`, 'info');
+}
+
+// Individual (por equipo elegido)
 async function espnTeamGames(espnId, season, stype, fecha) {
   const d = await espnJson(`${ESPN}/teams/${espnId}/schedule?season=${season}&seasontype=${stype}`);
   let evs = (d.events || []).filter(e => e.competitions?.[0]?.status?.type?.completed);
@@ -1104,7 +1290,7 @@ $('espn-games-btn').addEventListener('click', async () => {
     if (!games.length) throw new Error(fecha ? `No hay partido terminado de ${selTeamName()} el ${fecha}.` : `No encontré partidos terminados en la temporada ${season}.`);
     espnLog(`${games.length} ${games.length === 1 ? 'partido encontrado' : 'partidos encontrados'}. Leyendo box scores…`, 'info');
     const results = [];
-    for (let i = 0; i < games.length; i += 4) {   // de 4 en 4 para no saturar a ESPN
+    for (let i = 0; i < games.length; i += 4) {
       const chunk = games.slice(i, i + 4);
       const sums = await Promise.all(chunk.map(g => espnSummary(g.eventId).catch(() => null)));
       chunk.forEach((g, j) => { if (sums[j]) results.push({ g, s: sums[j] }); });
@@ -1121,7 +1307,7 @@ function buildTeamRows(results, espnId) {
   results.forEach(({ g, s }) => {
     const us = teamTotals(s, espnId), them = teamTotals(s, g.rivalId);
     if (!us.ok || !them.ok) return;
-    const row = { fecha: g.fecha, rival: g.rival, sede: g.sede, pts: us.tot.pts, pts_allowed: them.tot.pts, q1: us.tot.q1 ?? '', q1_allowed: them.tot.q1 ?? '' };
+    const row = { equipo: selTeamName(), fecha: g.fecha, rival: g.rival, sede: g.sede, pts: us.tot.pts, pts_allowed: them.tot.pts, q1: us.tot.q1 ?? '', q1_allowed: them.tot.q1 ?? '' };
     T_STATS.forEach(([k]) => { row[k] = us.tot[k]; row[k + '_allowed'] = them.tot[k]; });
     rows.push(row);
   });
@@ -1143,7 +1329,7 @@ async function buildPlayerRows(results, espnId, teamId) {
       let p = roster.find(r => r.espn_id && r.espn_id === l.espnId);
       if (!p) { let best = null, bs = 0; roster.forEach(r => { const sc = similarity(r.nombre, l.name); if (sc > bs) { bs = sc; best = r; } }); if (bs >= 0.8) p = best; }
       if (!p) { outside.add(l.name); return; }
-      rows.push({ nombre: p.nombre, fecha: g.fecha, rival: g.rival, sede: g.sede, min: l.min, pts: l.pts, reb: l.reb, ast: l.ast,
+      rows.push({ equipo: selTeamName(), nombre: p.nombre, fecha: g.fecha, rival: g.rival, sede: g.sede, min: l.min, pts: l.pts, reb: l.reb, ast: l.ast,
         fg3m: l.fg3m, stl: l.stl, blk: l.blk, tov: l.tov, fgm: l.fgm, fga: l.fga, fg3a: l.fg3a, ftm: l.ftm, fta: l.fta, oreb: l.oreb, espn_id: l.espnId });
     });
   });
@@ -1191,8 +1377,6 @@ $('espn-day-btn').addEventListener('click', async () => {
 
 // =========================================================
 // HISTORIAL PREVIO: temporada pasada (resumen) + pretemporada (partidos)
-// Se guarda en campos separados ("previa" y "pre") que la app de usuarios
-// nunca muestra; solo los usa el modelo de proyección.
 // =========================================================
 const prevLog = logger($('prev-log'));
 $('prev-season').value = Number($('espn-season').value) - 1;
@@ -1212,7 +1396,7 @@ function ourTeams() {
   return Object.keys(teamList).map(id => ({ id, espn: espnIdFor(id) })).filter(t => t.espn);
 }
 async function collectEvents(teams, season, stype, btn) {
-  const events = new Map(); let k = 0;
+  const events = new Map();
   await runPool(teams, 4, async t => {
     const d = await espnRetry(`${ESPN}/teams/${t.espn}/schedule?season=${season}&seasontype=${stype}`);
     (d.events || []).filter(e => e.competitions?.[0]?.status?.type?.completed).forEach(e => {
@@ -1270,7 +1454,6 @@ function gameRec(s, us, them, comp, fecha) {
   if (b.ok) { rec.pts_allowed = b.tot.pts; T_STATS.forEach(([k]) => { rec[k + '_allowed'] = b.tot[k]; }); }
   return { rec, lines: a.lines };
 }
-// Escribe en cada roster lo que corresponda a sus jugadores (por ID de ESPN o por nombre)
 async function writeToRosters(teams, byAthlete, field, mergeMaps, log) {
   const nameIdx = {};
   Object.keys(byAthlete).forEach(aid => { nameIdx[normName(byAthlete[aid].name)] = aid; });
@@ -1323,7 +1506,6 @@ $('prev-btn').addEventListener('click', async () => {
       batch.set(doc(db, 'equipos', t.id), { previa: summarizeTeam(recs, season) }, { merge: true }); nt++; });
     await batch.commit();
     prevLog(`${nt} equipos con resumen de la temporada ${season}.`);
-    // Promedios reales de la liga (los usa el modelo en lugar de valores fijos)
     const sums = teams.map(t => teamRecs[t.espn]).filter(r => r && r.length >= 40).map(r => summarizeTeam(r, season));
     if (sums.length >= 20) {
       const m = a => a.reduce((x, y) => x + y, 0) / a.length;
