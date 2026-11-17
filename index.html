@@ -571,17 +571,24 @@ table.log td.hl{font-weight:800}
             <button type="button" class="ai-kbtn" id="ai-key-toggle"><i class="fa-solid fa-key"></i> API Key</button>
           </div>
           <div id="ai-keybar" class="ai-keybar hidden">
+            <p class="small-note" style="margin:0 0 10px"><b>Opcional.</b> El lector gratis funciona sin llaves. Estas llaves solo se usan de respaldo si el lector gratis no logra leer una captura.</p>
             <label class="lbl" for="ai-key-in">Llave gratuita de Google Gemini (se guarda solo en este dispositivo)</label>
             <div class="ai-keyrow">
               <input class="input" type="password" id="ai-key-in" placeholder="Pega aquí tu API Key (AIzaSy…)" autocomplete="off">
               <button type="button" class="btn btn-ink" id="ai-key-save">GUARDAR</button>
             </div>
-            <p class="small-note" style="margin:6px 0 0">Consíguela gratis en <b>aistudio.google.com</b> &gt; <i>Get API key</i>. Nunca se sube a GitHub.</p>
+            <p class="small-note" style="margin:6px 0 10px">Consíguela gratis en <b>aistudio.google.com</b> &gt; <i>Get API key</i>. Nunca se sube a GitHub.</p>
+            <label class="lbl" for="ai-ckey-in">Llave de Claude · Anthropic (recomendada: casi no se satura)</label>
+            <div class="ai-keyrow">
+              <input class="input" type="password" id="ai-ckey-in" placeholder="Pega aquí tu llave (sk-ant-…)" autocomplete="off">
+              <button type="button" class="btn btn-ink" id="ai-ckey-save">GUARDAR</button>
+            </div>
+            <p class="small-note" style="margin:6px 0 0">Sácala en <b>console.anthropic.com</b> &gt; API Keys y carga unos dólares de saldo (pon un límite de gasto). Si la pones, la app lee primero con Claude y usa Gemini solo de respaldo. Se guarda solo en este dispositivo.</p>
           </div>
           <div class="ai-drop" id="ai-drop" tabindex="0" role="button">
             <i class="fa-solid fa-images"></i>
             <b>Sube o pega capturas de Playdoit</b>
-            <span>Toca para elegir varias fotos de tu galería, arrástralas o pega con Ctrl+V. La IA filtra automáticamente las líneas con ventaja según DICA.</span>
+            <span>Toca para elegir varias fotos de tu galería, arrástralas o pega con Ctrl+V. El lector gratis guarda las líneas con ventaja según DICA (momios mayores a 1.18).</span>
             <input type="file" id="ai-file-in" accept="image/*" multiple class="hidden">
           </div>
           <div id="ai-status" class="ai-status hidden"></div>
@@ -1780,29 +1787,40 @@ function gameOnDate(a, b) {
 // =========================================================
 // LECTOR IA DE CAPTURAS PLAYDOIT (Gemini Vision)
 // =========================================================
-const GEMINI_LS = 'dica_gemini_key';
+const GEMINI_LS = 'dica_gemini_key', CLAUDE_LS = 'dica_claude_key';
 const getGeminiKey = () => (lsGet(GEMINI_LS) || '').trim();
+const getClaudeKey = () => (lsGet(CLAUDE_LS) || '').trim();
 const sleepMs = ms => new Promise(r => setTimeout(r, ms));
 
 function updateAiBoxUI() {
   const box = $('ai-lines-box');
   if (!box) return;
   box.classList.toggle('hidden', !canCap());
-  const hasKey = !!getGeminiKey();
-  $('ai-keybar').classList.toggle('hidden', hasKey);
+  const g = !!getGeminiKey(), c = !!getClaudeKey(), hasKey = g || c;
+  $('ai-keybar').classList.add('hidden');
   $('ai-key-toggle').innerHTML = hasKey
-    ? '<i class="fa-solid fa-check" style="color:var(--win)"></i> API Key lista'
-    : '<i class="fa-solid fa-key"></i> Configurar API Key';
+    ? `<i class="fa-solid fa-check" style="color:var(--win)"></i> Respaldo: ${c && g ? 'Claude + Gemini' : c ? 'Claude' : 'Gemini'}`
+    : '<i class="fa-solid fa-key"></i> Respaldo IA (opcional)';
 }
 
 $('ai-key-toggle').addEventListener('click', () => {
   $('ai-keybar').classList.toggle('hidden');
   if (!$('ai-keybar').classList.contains('hidden')) {
     $('ai-key-in').value = getGeminiKey();
+    $('ai-ckey-in').value = getClaudeKey();
     $('ai-key-in').focus();
   }
 });
 
+$('ai-ckey-save').addEventListener('click', () => {
+  const val = $('ai-ckey-in').value.trim();
+  if (val && !/^sk-ant-/.test(val)) { alert('La llave de Claude empieza con "sk-ant-". Revisa que la copiaste completa.'); return; }
+  if (val) lsSet(CLAUDE_LS, val); else { try { localStorage.removeItem(CLAUDE_LS); } catch {} }
+  $('ai-ckey-in').value = '';
+  updateAiBoxUI();
+  $('ai-status').innerHTML = noteHTML(val ? 'Llave de Claude guardada en este dispositivo. Ahora las capturas se leen primero con Claude.' : 'Llave de Claude borrada de este dispositivo.');
+  $('ai-status').classList.remove('hidden');
+});
 $('ai-key-save').addEventListener('click', () => {
   const val = $('ai-key-in').value.trim();
   if (!val) { alert('Pega tu API Key de Gemini primero.'); return; }
@@ -1843,10 +1861,11 @@ async function discoverFlashModels(apiKey) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
     if (!r.ok) return [];
     const d = await r.json();
-    const rank = n => (/latest$/i.test(n) ? 0 : 0) + (/preview|exp/i.test(n) ? 10 : 0) + (/lite|8b/i.test(n) ? 3 : 0);
+    // solo nombres "normales" (gemini-X.Y-flash, gemini-flash-latest); nada de omni/preview/live/tts/imagen
+    const rank = n => (/preview|exp/i.test(n) ? 10 : 0) + (/lite|8b/i.test(n) ? 3 : 0);
     return (d.models || [])
-      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent') && /gemini.*flash/i.test(m.name)
-        && !/1\.5|2\.0|tts|image|audio|live|native|embed|thinking/i.test(m.name))
+      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent') && /^models\/gemini-(\d+(\.\d+)?-)?flash(-lite)?(-latest|-\d{3})?$/i.test(m.name)
+        && !/1\.5|2\.0/i.test(m.name))
       .map(m => m.name.replace(/^models\//, ''))
       .sort((a, b) => rank(a) - rank(b) || b.localeCompare(a, undefined, { numeric: true }))
       .slice(0, 5);
@@ -1858,8 +1877,8 @@ async function discoverFlashModels(apiKey) {
 const isTransientAi = e => e && (e.status === 503 || e.status === 429 || e.status === 500 || /high demand|overloaded|unavailable|quota|rate|try again/i.test(String(e.message || '')));
 const AI_BUSY_MSG = 'Los servidores de Google Gemini están saturados en este momento (es del lado de Google, no de tu app). Espera 1 o 2 minutos y vuelve a subir la captura.';
 
-async function callGeminiVision(apiKey, base64Jpeg, playerNamesHint, onWait = () => {}) {
-  const prompt = `Eres un extractor experto de líneas de apuestas deportivas de NBA en la casa Playdoit (Altenar) en español.
+function aiPrompt(playerNamesHint) {
+  return `Eres un extractor experto de líneas de apuestas deportivas de NBA en la casa Playdoit (Altenar) en español.
 Analiza esta captura de pantalla y extrae TODAS las líneas de jugadores y totales de partido visibles.
 
 Devuelve ÚNICAMENTE un JSON válido (un arreglo de objetos) con esta estructura exacta:
@@ -1880,6 +1899,9 @@ Reglas CRÍTICAS sobre la interfaz móvil de Playdoit:
 4. Ignora cualquier fila que tenga un ícono de candado cerrado en lugar de un momio numérico.
 5. Si un nombre aparece cortado (ej. "Andre Drum" o "Jalen Bruns"), complétalo usando esta lista de jugadores de la jornada: ${playerNamesHint}.
 6. Si no hay líneas de apuestas visibles en la imagen, devuelve [].`;
+}
+async function callGeminiVision(apiKey, base64Jpeg, playerNamesHint, onWait = () => {}, patience = 2) {
+  const prompt = aiPrompt(playerNamesHint);
 
   const tryModel = async (model) => {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
@@ -1904,7 +1926,7 @@ Reglas CRÍTICAS sobre la interfaz móvil de Playdoit:
       const err = new Error(msg);
       err.status = res.status;
       const rd = (errData.error?.details || []).find(x => x.retryDelay)?.retryDelay;   // ej. "12s"
-      if (rd) err.retryMs = Math.min(30000, (parseFloat(rd) || 0) * 1000);
+      if (rd) err.retryMs = Math.min(8000, (parseFloat(rd) || 0) * 1000);
       throw err;
     }
     const data = await res.json();
@@ -1915,8 +1937,8 @@ Reglas CRÍTICAS sobre la interfaz móvil de Playdoit:
   };
 
   const discovered = await discoverFlashModels(apiKey);
-  const candidates = [...new Set([...discovered, 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'])].slice(0, 4);   // máx. ~40 s de espera
-  const WAITS = [2500, 6000];   // 2 reintentos por modelo, cada vez esperando más
+  const candidates = [...new Set(['gemini-flash-latest', ...discovered, 'gemini-2.5-flash', 'gemini-flash-lite-latest'])].slice(0, patience >= 2 ? 4 : 2);
+  const WAITS = patience >= 2 ? [2500, 6000] : [2000];   // con Claude de respaldo no se espera tanto
   let lastErr = null, sawBusy = false;
   for (const model of candidates) {
     for (let attempt = 0; attempt <= WAITS.length; attempt++) {
@@ -1944,6 +1966,222 @@ Reglas CRÍTICAS sobre la interfaz móvil de Playdoit:
   throw lastErr || new Error(AI_BUSY_MSG);
 }
 
+// Lector con Claude (Anthropic): se llama directo desde el navegador con la llave guardada en este dispositivo
+function parseAiJson(t) {
+  const clean = String(t || '').replace(/```json\s*/gi, '').replace(/```/g, '').trim();
+  try { const v = JSON.parse(clean); return Array.isArray(v) ? v : (Array.isArray(v?.lineas) ? v.lineas : []); } catch {}
+  const a = clean.indexOf('['), b = clean.lastIndexOf(']');
+  if (a >= 0 && b > a) { try { const v = JSON.parse(clean.slice(a, b + 1)); return Array.isArray(v) ? v : []; } catch {} }
+  return [];
+}
+async function callClaudeVision(apiKey, base64Jpeg, playerNamesHint, onWait = () => {}) {
+  const WAITS = [3000, 7000];
+  let lastErr = null;
+  for (let attempt = 0; attempt <= WAITS.length; attempt++) {
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5', max_tokens: 4000, temperature: 0,
+          messages: [{ role: 'user', content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64Jpeg } },
+            { type: 'text', text: aiPrompt(playerNamesHint) + '\nResponde solo con el arreglo JSON, sin texto antes ni después.' }
+          ] }]
+        })
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        const err = new Error(d.error?.message || `Error HTTP ${res.status}`); err.status = res.status; throw err;
+      }
+      const d = await res.json();
+      return parseAiJson((d.content || []).filter(c => c.type === 'text').map(c => c.text).join(''));
+    } catch (e) {
+      lastErr = e;
+      if (e.status === 401 || e.status === 403) throw new Error('Tu llave de Claude no es válida. Revísala con el botón de llaves.');
+      if (e.status === 400 && /credit|balance|billing/i.test(e.message || '')) throw new Error('Tu cuenta de Claude no tiene saldo. Cárgale saldo en console.anthropic.com.');
+      const busyErr = e.status === 529 || e.status === 503 || e.status === 429 || e.status === 500 || /overloaded/i.test(e.message || '');
+      if (!busyErr || attempt === WAITS.length) throw e;
+      onWait(Math.round(WAITS[attempt] / 1000), 'Claude');
+      await sleepMs(WAITS[attempt]);
+    }
+  }
+  throw lastErr;
+}
+// Usa Claude primero (si hay llave) y Gemini de respaldo, o al revés si solo hay Gemini
+async function readScreenshot(base64Jpeg, hint, onWait) {
+  const ck = getClaudeKey(), gk = getGeminiKey();
+  let firstErr = null;
+  if (ck) {
+    try { return { items: await callClaudeVision(ck, base64Jpeg, hint, onWait), via: 'Claude' }; }
+    catch (e) { if (!gk || /saldo|no es válida/.test(e.message || '')) throw e; firstErr = e; console.warn('Claude falló, probando Gemini', e); }
+  }
+  try { return { items: await callGeminiVision(gk, base64Jpeg, hint, onWait, ck ? 1 : 2), via: 'Gemini' }; }
+  catch (e) { throw firstErr && !isTransientAi(firstErr) ? firstErr : e; }
+}
+
+// ===== Lector gratis de capturas Playdoit (OCR) =====
+// words: [{t, x0, y0, x1, y1}] en píxeles; W = ancho de la imagen
+function parsePlaydoit(words, W) {
+  const nrm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const isNum = t => /^\d{1,3}([.,]\d{1,2})?$/.test(t);
+  const val = t => Number(String(t).replace(',', '.'));
+  // el OCR a veces se come el punto: "25" -> 2.5, "115" -> 11.5 (las líneas de jugador siempre terminan en .5)
+  const lineVal = t => /^\d{2,3}$/.test(t) && t.endsWith('5') ? Number(t.slice(0, -1) + '.5') : val(t);
+  // momios sin punto: "215" -> 2.15
+  const oddVal = t => /^\d{3}$/.test(t) ? Number(t) / 100 : val(t);
+  const isOdd = t => /[.,]\d{2}$/.test(t) || /^\d{3}$/.test(t) || /^\d{1,2}$/.test(t);
+  const ws = words.map(w => ({ ...w, t: String(w.t || '').trim().replace(/^[|(\[{'"“”‘’]+|[|)\]}'"“”‘’:;]+$/g, '') }))
+    .filter(w => w.t && w.x1 > w.x0);
+  if (!ws.length) return [];
+  // 1) agrupar palabras en renglones
+  const hs = ws.map(w => w.y1 - w.y0).sort((a, b) => a - b), hMed = hs[Math.floor(hs.length / 2)] || 20;
+  ws.sort((a, b) => (a.y0 + a.y1) / 2 - (b.y0 + b.y1) / 2);
+  const lines = [];
+  for (const w of ws) {
+    const yc = (w.y0 + w.y1) / 2, L = lines[lines.length - 1];
+    if (L && Math.abs(yc - L.yc) < hMed * 0.6) { L.w.push(w); L.yc = (L.yc * (L.w.length - 1) + yc) / L.w.length; }
+    else lines.push({ yc, w: [w] });
+  }
+  lines.forEach(L => { L.w.sort((a, b) => a.x0 - b.x0); L.text = L.w.map(w => w.t).join(' '); L.n = nrm(L.text); });
+
+  const marketOf = n => {
+    if (/\b[l1i]er\s*cuart|1\s*cuart|primer cuart|1a mitad|mitad|intentos|ganador|handicap|doble|par\/impar|ambos/.test(n)) return 'ignore';
+    if (/puntos\s*-?\s*rebotes\s*-?\s*asist|pts\s*-?\s*reb\s*-?\s*ast|puntos.*rebotes.*asistencias/.test(n)) return 'pra';
+    if (/pts\s*-?\s*reb\b|puntos\s*-\s*rebotes|puntos y rebotes/.test(n)) return 'pr';
+    if (/pts\s*-?\s*asist|puntos\s*-\s*asist|puntos y asist/.test(n)) return 'pa';
+    if (/reb\s*-?\s*ast|rebotes\s*-\s*asist|rebotes y asist/.test(n)) return 'ra';
+    if (/bloq|tapones\s*-?\s*robos|robos\s*-?\s*tapones/.test(n)) return 'sb';
+    if (/triples|3\s*pts|tiros de 3/.test(n)) return 'fg3m';
+    if (/rebotes/.test(n)) return 'reb';
+    if (/asistencias/.test(n)) return 'ast';
+    if (/robos/.test(n)) return 'stl';
+    if (/tapones/.test(n)) return 'blk';
+    if (/totales/.test(n)) return 'total';
+    if (/puntos/.test(n)) return 'pts';
+    return null;
+  };
+  const isHeader = n => /incl|prorroga|\(ot|ot\)|de jugador/.test(n);
+  const isLinea = w => /^l[ií1]ne/.test(nrm(w.t));
+  const STOP = /^(mas|menos|de|linea|line|jugadores|sgp|por|min|vs)$/;
+  const nameOf = arr => {
+    const parts = arr.map(w => w.t).filter(t => /[a-záéíóúñü]/i.test(t) && !isNum(t));
+    while (parts.length && (parts[0].length <= 2 && !/^[A-Z][a-z]$/.test(parts[0]) || /^[^A-Za-zÁÉÍÓÚÑ]/.test(parts[0]))) parts.shift();
+    const s = parts.join(' ').replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñü'.\- ]/g, '').replace(/\s+/g, ' ').trim();
+    return s.split(' ').length >= 2 && !STOP.test(nrm(s)) ? s : '';
+  };
+
+  const items = [];
+  let market = null, rows = 0, mainX = null, ov = null, lastRow = null;
+  const totals = [];
+  for (const L of lines) {
+    // líneas de totales del partido: "Más de 218 1.43" / "Menos de 233 1.47"
+    const tm = L.n.match(/\b(mas|menos)\s+de\s+(\d{2,3}(?:[.,]5)?)\s+(\d{1,2}[.,]\d{2})\b/);
+    if (tm && val(tm[2]) >= 120) { totals.push({ dir: tm[1] === 'mas' ? 'mas' : 'menos', line: val(tm[2]), odds: val(tm[3]) }); continue; }
+
+    const left = ov ? L.w.filter(w => w.x1 < ov.left) : L.w;
+    const leftN = nrm(left.map(w => w.t).join(' '));
+    const mk = marketOf(leftN);
+    // encabezado de sección (o uno que se asoma a la izquierda del menú abierto, como "1er cuarto" o "Intentos")
+    if (mk === 'ignore' || (mk && isHeader(leftN))) {
+      market = mk === 'ignore' ? null : mk; rows = 0; if (!ov) { mainX = null; lastRow = null; }
+      if (!ov) continue;
+    }
+    const lin = L.w.find(isLinea);
+    if (lin) {
+      const cx = (lin.x0 + lin.x1) / 2;
+      const isMainHdr = rows === 0 || mainX == null || (ov && Math.abs(cx - mainX) < W * 0.05);
+      if (isMainHdr) { mainX = cx; ov = null; rows = 0; lastRow = null; }
+      else if (lastRow) { ov = { x: cx, left: lin.x0 - W * 0.12, owner: lastRow, market: lastRow.market }; }
+      continue;
+    }
+    const nums = L.w.filter(w => isNum(w.t)).map(w => ({ v: val(w.t), cx: (w.x0 + w.x1) / 2, raw: w.t }));
+    const ovMarket = ov && ov.market;
+    if (ov) {
+      const onOv = nums.filter(n => n.cx > ov.left);
+      const first = onOv[0];
+      const nearOv = first && Math.abs(first.cx - ov.x) < W * 0.07;
+      const nearMain = first && mainX != null && Math.abs(first.cx - mainX) < W * 0.05 && Math.abs(first.cx - ov.x) >= W * 0.07;
+      if (nearOv) {
+        const od = onOv[onOv.length - 1];
+        if (onOv.length >= 2 && isOdd(od.raw)) items.push({ player: ov.owner.name, market: ovMarket, dir: 'mas', line: lineVal(first.raw), odds: oddVal(od.raw), src: 'menu' });
+        continue;
+      }
+      if (nearMain) ov = null; else continue;
+    }
+    if (!market || mainX == null || !nums.length) continue;
+    const ln = nums.find(n => Math.abs(n.cx - mainX) < W * 0.08);
+    if (!ln) continue;
+    const name = nameOf(L.w.filter(w => w.x1 < ln.cx - W * 0.04));
+    if (!name) continue;
+    const odds = nums.filter(n => n.cx > ln.cx + W * 0.04 && isOdd(n.raw));
+    rows++;
+    lastRow = { name, market };
+    const lv = lineVal(ln.raw);
+    if (odds[0]) items.push({ player: name, market, dir: 'mas', line: lv, odds: oddVal(odds[0].raw), src: 'fila' });
+    if (odds[1]) items.push({ player: name, market, dir: 'menos', line: lv, odds: oddVal(odds[1].raw), src: 'fila' });
+  }
+  // totales: el "Más de" más bajo y el "Menos de" más alto que se vean
+  const mas = totals.filter(t => t.dir === 'mas').sort((a, b) => a.line - b.line)[0];
+  const men = totals.filter(t => t.dir === 'menos').sort((a, b) => b.line - a.line)[0];
+  [mas, men].filter(Boolean).forEach(t => items.push({ player: 'TOTAL_PARTIDO', market: 'total', dir: t.dir, line: t.line, odds: t.odds, src: 'total' }));
+  return items;
+}
+
+const OCR = { worker: null, loading: null };
+function loadScript(src) {
+  return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('No se pudo descargar el lector gratis. Revisa tu internet.')); document.head.appendChild(s); });
+}
+async function getOcrWorker(onMsg) {
+  if (OCR.worker) return OCR.worker;
+  if (!OCR.loading) OCR.loading = (async () => {
+    if (!window.Tesseract) await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+    const w = await Tesseract.createWorker('spa', 1, { logger: m => { if (m.status && /load|init/i.test(m.status)) onMsg && onMsg(m); } });
+    await w.setParameters({ tessedit_pageseg_mode: '11' });
+    OCR.worker = w; return w;
+  })().catch(e => { OCR.loading = null; throw e; });
+  return OCR.loading;
+}
+function fileToImage(file) {
+  return new Promise((res, rej) => { const u = URL.createObjectURL(file); const im = new Image();
+    im.onload = () => { URL.revokeObjectURL(u); res(im); }; im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('Formato de imagen no válido.')); }; im.src = u; });
+}
+// Prepara la captura: la agranda y convierte los encabezados rojos (letra blanca) en letra negra sobre blanco
+function ocrCanvas(img) {
+  const sc = img.width < 1300 ? 1300 / img.width : 1;
+  const W = Math.round(img.width * sc), H = Math.round(img.height * sc);
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d', { willReadFrequently: true }); ctx.drawImage(img, 0, 0, W, H);
+  const id = ctx.getImageData(0, 0, W, H), d = id.data, GAP = Math.round(W * 0.05), MINS = W * 0.08;
+  const gray = new Uint8ClampedArray(W), red = new Uint8Array(W);
+  for (let y = 0; y < H; y++) {
+    let nRed = 0;
+    for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, r = d[i], g = d[i + 1], b = d[i + 2];
+      gray[x] = 0.299 * r + 0.587 * g + 0.114 * b; red[x] = r > 170 && g < 90 && b < 90 ? 1 : 0; nRed += red[x]; }
+    if (nRed >= W * 0.05) {
+      let s = -1, prev = -1;
+      const flush = (a, b) => { if (b - a < MINS) return; for (let x = a; x <= b; x++) gray[x] = red[x] ? 255 : (gray[x] > 170 ? 0 : gray[x]); };
+      for (let x = 0; x < W; x++) if (red[x]) { if (s < 0) s = x; else if (x - prev > GAP) { flush(s, prev); s = x; } prev = x; }
+      if (s >= 0) flush(s, prev);
+    }
+    for (let x = 0; x < W; x++) { const i = (y * W + x) * 4; d[i] = d[i + 1] = d[i + 2] = gray[x]; }
+  }
+  ctx.putImageData(id, 0, 0);
+  return cv;
+}
+async function readScreenshotOCR(file, onMsg) {
+  const worker = await getOcrWorker(onMsg);
+  const cv = ocrCanvas(await fileToImage(file));
+  const { data } = await worker.recognize(cv, {}, { blocks: true, text: true });
+  const words = [];
+  (data.blocks || []).forEach(b => (b.paragraphs || []).forEach(p => (p.lines || []).forEach(l => (l.words || []).forEach(w => words.push(w)))));
+  if (!words.length && Array.isArray(data.words)) words.push(...data.words);
+  const ws = words.filter(w => (w.confidence ?? 100) > 10).map(w => ({ t: w.text, x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1 }));
+  const items = parsePlaydoit(ws, cv.width);
+  items.forEach(it => { if (it.market === 'total') it.hint = data.text || ws.map(w => w.t).join(' '); });
+  return items;
+}
+
 function matchDayPlayer(rawName, dayPlayers) {
   const q = normN(rawName);
   if (!q) return null;
@@ -1967,14 +2205,12 @@ const VALID_AI_MARKETS = new Set(['pts', 'reb', 'ast', 'fg3m', 'pra', 'pr', 'pa'
 async function processPlaydoitScreenshots(fileList) {
   const files = [...fileList].filter(f => f && f.type.startsWith('image/'));
   if (!files.length) return;
-  const apiKey = getGeminiKey();
+  const apiKey = getGeminiKey() || getClaudeKey();
   const stBox = $('ai-status');
   stBox.classList.remove('hidden');
 
-  if (!apiKey) {
-    $('ai-keybar').classList.remove('hidden');
-    $('ai-key-in').focus();
-    stBox.innerHTML = noteHTML('Primero pega y guarda tu <b>API Key de Gemini</b> arriba para poder leer las capturas.', 'warn');
+  if (false) {
+    stBox.innerHTML = noteHTML('Primero guarda tu llave de <b>Claude</b> o de <b>Gemini</b> arriba para poder leer las capturas.', 'warn');
     return;
   }
   if (!J.fecha) {
@@ -2030,29 +2266,36 @@ async function processPlaydoitScreenshots(fileList) {
       .slice(0, 140)
       .join(', ');
 
-    const rawExtracted = [], failed = [];
+    const rawExtracted = [], failed = [], usedVia = new Set();
     let lastFail = '';
     for (let i = 0; i < files.length; i++) {
-      const tag = `Leyendo captura <b>${i + 1} de ${files.length}</b> con IA…`;
+      const tag = `Leyendo captura <b>${i + 1} de ${files.length}</b>…`;
       stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> ${tag}`);
+      // 1) lector gratis en el celular (sin internet de IA, nunca se satura)
+      try {
+        const its = await readScreenshotOCR(files[i], () => { stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> ${tag}<br><small>Preparando el lector gratis (solo la primera vez tarda un poco)…</small>`); });
+        if (its.length) { rawExtracted.push(...its); usedVia.add('lector gratis'); continue; }
+      } catch (e) { console.warn('Lector gratis falló', e); }
+      // 2) si no pudo, usa la IA de respaldo (si hay llave)
+      if (!apiKey) { failed.push(i + 1); lastFail = 'El lector gratis no encontró líneas en esa captura. Revisa que se vean el encabezado rojo del mercado, los nombres y los momios.'; continue; }
       try {
         const b64 = await prepareImageBase64(files[i]);
-        const items = await callGeminiVision(apiKey, b64, hintNames, (s, model) => {
-          stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> ${tag}<br><small>Google está saturado, reintentando en ${s} s (${esc(model)})…</small>`, 'warn');
+        const r = await readScreenshot(b64, hintNames, (s, model) => {
+          stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> ${tag}<br><small>${/claude/i.test(model) ? 'Claude' : 'Google'} está ocupado, reintentando en ${s} s (${esc(model)})…</small>`, 'warn');
         });
-        rawExtracted.push(...items);
+        rawExtracted.push(...r.items); usedVia.add(r.via);
       } catch (e) {
-        if (/API Key/i.test(e.message || '')) throw e;   // la llave está mal: no tiene caso seguir
+        if (/API Key|llave de Claude|saldo/i.test(e.message || '')) throw e;   // la llave está mal: no tiene caso seguir
         console.warn('Captura no leída', i + 1, e);
         failed.push(i + 1); lastFail = e.message || '';
       }
     }
-    const failTxt = failed.length ? ` <b>${failed.length} captura${failed.length === 1 ? '' : 's'} no se pudo leer</b> (${failed.length === files.length ? esc(lastFail) : 'servidores de Google saturados'}): vuelve a subir${failed.length === 1 ? 'la' : 'las'} en 1 o 2 minutos.` : '';
+    const failTxt = failed.length ? ` <b>No se pudo leer la captura ${failed.join(', ')}</b>: ${esc(lastFail || 'intenta de nuevo')}` : '';
     AI_FAIL_TXT = failTxt;
 
     if (!rawExtracted.length) {
       stBox.innerHTML = noteHTML(failed.length === files.length ? esc(lastFail || AI_BUSY_MSG)
-        : 'La IA no detectó líneas de jugadores en esas capturas. Asegúrate de que se vean los nombres y momios.' + failTxt, failed.length === files.length ? 'bad' : 'warn');
+        : 'No se detectaron líneas en esas capturas. Asegúrate de que se vean el encabezado rojo del mercado, los nombres y los momios.' + failTxt, failed.length === files.length ? 'bad' : 'warn');
       return;
     }
 
@@ -2069,13 +2312,17 @@ async function processPlaydoitScreenshots(fileList) {
         ignoredCount++;
         continue;
       }
-      if (momio != null && (momio < 1.15 || momio > 2.25)) {
+      if (momio == null || momio <= 1.18) {   // solo momios mayores a 1.18
         ignoredCount++;
         continue;
       }
 
       if (field === 'total') {
         let targetG = juegos.length === 1 ? juegos[0] : null;
+        if (!targetG && item.hint) {
+          const q = normN(item.hint), has = id => { const nm = normN(teamName(id)).split(' '); return q.includes(nm[nm.length - 1]) || q.includes(normN(teamName(id))); };
+          targetG = juegos.find(g => has(g.local) && has(g.visitante)) || juegos.find(g => has(g.local) || has(g.visitante)) || null;
+        }
         if (!targetG && item.player) {
           const q = normN(item.player);
           targetG = juegos.find(g => q.includes(normN(teamName(g.local))) || q.includes(normN(teamName(g.visitante))) || q.includes(teamAbbr(g.local).toLowerCase()) || q.includes(teamAbbr(g.visitante).toLowerCase()));
@@ -2167,7 +2414,7 @@ async function processPlaydoitScreenshots(fileList) {
     renderLines();
     if (currentPicks.length) renderPicks();
 
-    stBox.innerHTML = noteHTML(`<b>¡Listo!</b> Se guardaron <b>${validKeys.length} mercado${validKeys.length === 1 ? '' : 's'}</b> (${totalSavedOpts} línea${totalSavedOpts === 1 ? '' : 's'} filtrada${totalSavedOpts === 1 ? '' : 's'} con ventaja DICA).${ignoredCount ? ` Se descartaron ${ignoredCount} líneas sin ventaja o fuera de rango.` : ''}${AI_FAIL_TXT}`, AI_FAIL_TXT ? 'warn' : '');
+    stBox.innerHTML = noteHTML(`<b>¡Listo!</b> Se guardaron <b>${validKeys.length} mercado${validKeys.length === 1 ? '' : 's'}</b> (${totalSavedOpts} línea${totalSavedOpts === 1 ? '' : 's'} filtrada${totalSavedOpts === 1 ? '' : 's'} con ventaja DICA).${ignoredCount ? ` Se descartaron ${ignoredCount} líneas sin ventaja o fuera de rango.` : ''}${AI_FAIL_TXT}<br><small>Leído con ${[...usedVia].join(' y ') || 'IA'}.</small>`, AI_FAIL_TXT ? 'warn' : '');
   } catch (e) {
     console.error(e);
     stBox.innerHTML = noteHTML('Error al procesar capturas: ' + esc(e.message || 'error desconocido'), 'bad');
