@@ -564,8 +564,8 @@ table.log td.hl{font-weight:800}
           <select class="select jornada-sel" id="pk-fecha"><option value="">Cargando jornadas…</option></select>
         </div>
 
-        <!-- LECTOR IA DE CAPTURAS PLAYDOIT (solo admin / captura) -->
-        <div id="ai-lines-box" class="ai-box hidden">
+        <!-- LECTOR DE CAPTURAS/VIDEOS PLAYDOIT (solo admin / captura) -->
+        <div id="ai-home"><div id="ai-lines-box" class="ai-box hidden">
           <div class="ai-head">
             <b><i class="fa-solid fa-wand-magic-sparkles"></i> LECTOR DE CAPTURAS PLAYDOIT</b>
             <button type="button" class="ai-kbtn" id="ai-key-toggle"><i class="fa-solid fa-key"></i> API Key</button>
@@ -587,12 +587,12 @@ table.log td.hl{font-weight:800}
           </div>
           <div class="ai-drop" id="ai-drop" tabindex="0" role="button">
             <i class="fa-solid fa-images"></i>
-            <b>Sube o pega capturas de Playdoit</b>
+            <b>Sube capturas o videos de Playdoit</b>
             <span>Toca para elegir varias fotos de tu galería, arrástralas o pega con Ctrl+V. El lector gratis guarda las líneas con ventaja según DICA (momios mayores a 1.18).</span>
-            <input type="file" id="ai-file-in" accept="image/*" multiple class="hidden">
+            <input type="file" id="ai-file-in" accept="image/*,video/*" multiple class="hidden">
           </div>
           <div id="ai-status" class="ai-status hidden"></div>
-        </div>
+        </div></div>
 
         <div class="section-t" style="margin-top:6px">PUNTOS</div>
         <p class="sub" style="margin-top:-4px">La línea más conveniente de cada partido según el modelo DICA, entre las líneas disponibles.</p>
@@ -608,11 +608,12 @@ table.log td.hl{font-weight:800}
       <!-- TAB: PRIMER CUARTO -->
       <section id="tab-q1" class="hidden">
         <h2 class="h2">PRIMER CUARTO</h2>
-        <p class="sub">Solo tú ves esta pestaña. Puntos proyectados del 1er cuarto y la probabilidad de over / under de cada línea.</p>
+        <p class="sub">Puntos proyectados del 1er cuarto y la línea más conveniente de cada partido, con su récord.</p>
         <div class="field">
           <label class="lbl" for="q1-fecha">Jornada</label>
           <select class="select jornada-sel" id="q1-fecha"><option value="">Cargando jornadas…</option></select>
         </div>
+        <div id="ai-q1home"></div>
         <div id="q1-rec"></div>
         <div id="q1-out"></div>
       </section>
@@ -841,13 +842,12 @@ function avatarHTML(name, teamId, size = '', eid = '') {
 // ---------- Navegación ----------
 const TABS = ['stats', 'vegas', 'jugadores', 'picks', 'q1', 'res'];
 let currentTab = 'stats';
+// La pestaña 1er Q ya la ven todos tus usuarios
 function applyQ1Tab() {
-  $('q1-tab-btn').classList.toggle('hidden', !isAdmin);
-  document.querySelector('.tabnav-in').classList.toggle('six', isAdmin);
-  if (!isAdmin && currentTab === 'q1') showTab('picks');
+  $('q1-tab-btn').classList.remove('hidden');
+  document.querySelector('.tabnav-in').classList.add('six');
 }
 function showTab(t) {
-  if (t === 'q1' && !isAdmin) t = 'picks';
   currentTab = t;
   TABS.forEach(k => $('tab-' + k).classList.toggle('hidden', k !== t));
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
@@ -855,6 +855,9 @@ function showTab(t) {
   if (t === 'picks') loadPicks();
   if (t === 'res') loadResultados();
   if (t === 'q1') loadQ1();
+  // el lector de capturas/videos aparece en Picks y en 1er Q
+  const box = $('ai-lines-box');
+  if (box) { if (t === 'q1') $('ai-q1home').appendChild(box); else if (t === 'picks') $('ai-home').appendChild(box); }
 }
 document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 
@@ -2023,14 +2026,15 @@ async function readScreenshot(base64Jpeg, hint, onWait) {
 // ===== Lector gratis de capturas Playdoit (OCR) =====
 // words: [{t, x0, y0, x1, y1}] en píxeles; W = ancho de la imagen
 function parsePlaydoit(words, W) {
-  const nrm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const nrm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[=–—_~]/g, '-');
   const isNum = t => /^\d{1,3}([.,]\d{1,2})?$/.test(t);
   const val = t => Number(String(t).replace(',', '.'));
   // el OCR a veces se come el punto: "25" -> 2.5, "115" -> 11.5 (las líneas de jugador siempre terminan en .5)
   const lineVal = t => /^\d{2,3}$/.test(t) && t.endsWith('5') ? Number(t.slice(0, -1) + '.5') : val(t);
   // momios sin punto: "215" -> 2.15
   const oddVal = t => /^\d{3}$/.test(t) ? Number(t) / 100 : val(t);
-  const isOdd = t => /[.,]\d{2}$/.test(t) || /^\d{3}$/.test(t) || /^\d{1,2}$/.test(t);
+  // un candado a veces se lee como "8": un momio sin punto solo vale si tiene 3 cifras (215 = 2.15) o es 10 o más
+  const isOdd = t => /[.,]\d{2}$/.test(t) || /^\d{3}$/.test(t) || /^[1-9]\d$/.test(t);
   const ws = words.map(w => ({ ...w, t: String(w.t || '').trim().replace(/^[|(\[{'"“”‘’]+|[|)\]}'"“”‘’:;]+$/g, '') }))
     .filter(w => w.t && w.x1 > w.x0);
   if (!ws.length) return [];
@@ -2046,7 +2050,7 @@ function parsePlaydoit(words, W) {
   lines.forEach(L => { L.w.sort((a, b) => a.x0 - b.x0); L.text = L.w.map(w => w.t).join(' '); L.n = nrm(L.text); });
 
   const marketOf = n => {
-    if (/\b[l1i]er\s*cuart|1\s*cuart|primer cuart|1a mitad|mitad|intentos|ganador|handicap|doble|par\/impar|ambos/.test(n)) return 'ignore';
+    if (/cuart|1a mitad|mitad|intentos|ganador|handicap|doble|par\/impar|ambos/.test(n)) return 'ignore';
     if (/puntos\s*-?\s*rebotes\s*-?\s*asist|pts\s*-?\s*reb\s*-?\s*ast|puntos.*rebotes.*asistencias/.test(n)) return 'pra';
     if (/pts\s*-?\s*reb\b|puntos\s*-\s*rebotes|puntos y rebotes/.test(n)) return 'pr';
     if (/pts\s*-?\s*asist|puntos\s*-\s*asist|puntos y asist/.test(n)) return 'pa';
@@ -2061,7 +2065,7 @@ function parsePlaydoit(words, W) {
     if (/puntos/.test(n)) return 'pts';
     return null;
   };
-  const isHeader = n => /incl|prorroga|\(ot|ot\)|de jugador/.test(n);
+  const isHeader = n => /inc[l1i]|prorr|pror|\(ot|ot\)|de jugador/.test(n);
   const isLinea = w => /^l[ií1]ne/.test(nrm(w.t));
   const STOP = /^(mas|menos|de|linea|line|jugadores|sgp|por|min|vs)$/;
   const nameOf = arr => {
@@ -2072,7 +2076,7 @@ function parsePlaydoit(words, W) {
   };
 
   const items = [];
-  let market = null, rows = 0, mainX = null, ov = null, lastRow = null;
+  let market = null, rows = 0, mainX = null, ov = null, lastRow = null, hdrSeen = false;
   const totals = [];
   for (const L of lines) {
     // líneas de totales del partido: "Más de 218 1.43" / "Menos de 233 1.47"
@@ -2084,14 +2088,18 @@ function parsePlaydoit(words, W) {
     const mk = marketOf(leftN);
     // encabezado de sección (o uno que se asoma a la izquierda del menú abierto, como "1er cuarto" o "Intentos")
     if (mk === 'ignore' || (mk && isHeader(leftN))) {
-      market = mk === 'ignore' ? null : mk; rows = 0; if (!ov) { mainX = null; lastRow = null; }
+      market = mk === 'ignore' ? null : mk; rows = 0; hdrSeen = true; if (!ov) { mainX = null; lastRow = null; }
       if (!ov) continue;
     }
     const lin = L.w.find(isLinea);
     if (lin) {
       const cx = (lin.x0 + lin.x1) / 2;
       const isMainHdr = rows === 0 || mainX == null || (ov && Math.abs(cx - mainX) < W * 0.05);
-      if (isMainHdr) { mainX = cx; ov = null; rows = 0; lastRow = null; }
+      if (isMainHdr) {
+        // una tabla nueva sin que se haya leído su encabezado: no sabemos de qué mercado es, se salta
+        if (!hdrSeen && mainX != null) market = null;
+        mainX = cx; ov = null; rows = 0; lastRow = null; hdrSeen = false;
+      }
       else if (lastRow) { ov = { x: cx, left: lin.x0 - W * 0.12, owner: lastRow, market: lastRow.market }; }
       continue;
     }
@@ -2128,6 +2136,86 @@ function parsePlaydoit(words, W) {
   return items;
 }
 
+
+// ===== 1er cuarto: "Primer Cuarto - Totales" y "Primer cuarto - <equipo> total" =====
+// Devuelve renglones principales (con su sección) y renglones de menús abiertos (asignados al renglón pegado al menú)
+function parseQ1Playdoit(words, W) {
+  const nrm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[=–—_~<>«»]/g, '-');
+  const ws = words.map(w => ({ ...w, t: String(w.t || '').trim() })).filter(w => w.t && w.x1 > w.x0);
+  if (!ws.length) return [];
+  const hs = ws.map(w => w.y1 - w.y0).sort((a, b) => a - b), hMed = hs[Math.floor(hs.length / 2)] || 20;
+  ws.sort((a, b) => (a.y0 + a.y1) / 2 - (b.y0 + b.y1) / 2);
+  const lines = [];
+  for (const w of ws) {
+    const yc = (w.y0 + w.y1) / 2, L = lines[lines.length - 1];
+    if (L && Math.abs(yc - L.yc) < hMed * 0.6) { L.w.push(w); L.yc = (L.yc * (L.w.length - 1) + yc) / L.w.length; }
+    else lines.push({ yc, w: [w] });
+  }
+  const odd = t => /^\d{1,2}[.,]\d{2}$/.test(t) ? Number(t.replace(',', '.')) : /^\d{3}$/.test(t) ? Number(t) / 100 : null;
+  const lnv = t => /^\d{1,2}([.,]5)?$/.test(t) ? Number(t.replace(',', '.')) : (/^\d{3}$/.test(t) && t.endsWith('5') ? Number(t.slice(0, -1) + '.5') : null);
+  let sec = null;
+  const mains = [], menuItems = [];
+  for (const L of lines) {
+    L.w.sort((a, b) => a.x0 - b.x0);
+    const left = L.w.filter(w => w.x0 < W * 0.4), leftN = nrm(left.map(w => w.t).join(' '));
+    if (/cuart/.test(leftN)) {   // encabezado de sección de la pestaña 1er cuarto
+      if (/totales/.test(leftN)) sec = { type: 'total', team: '' };
+      else if (/1x2|handic|apuesta|ambo|carrera|anotara|impar|ganador|mitad|marcar|puntos/.test(leftN)) sec = null;   // "1er cuarto - Puntos" de jugadores no cuenta
+      else { const m = leftN.match(/cuart\w*\s*-\s*(.+)$/); sec = m ? { type: 'team', team: m[1].replace(/\btotal\b.*$/, '').replace(/sgp/g, '').trim() } : null; }
+    }
+    const toks = L.w;
+    for (let i = 0; i < toks.length - 1; i++) {
+      const a = nrm(toks[i].t);
+      let k, dir;
+      if (/^(mas|menos|lás|las)$/.test(a) && nrm(toks[i + 1].t) === 'de') { k = i + 2; dir = a === 'menos' ? 'menos' : 'mas'; }
+      else if (a === 'de' && (i === 0 || !/^(mas|menos)$/.test(nrm(toks[i - 1].t))) && toks[i].x0 < W * 0.35) { k = i + 1; dir = '?'; }   // el "Más" se perdió
+      else continue;
+      if (k >= toks.length) continue;
+      const isMenu = toks[i].x0 > W * 0.42 && dir !== '?';
+      let line = lnv(toks[k].t);
+      if (line != null && (line < 5 || line > 95)) line = isMenu ? null : line;
+      if (line == null && !isMenu) continue;   // en el menú se deduce por los renglones vecinos
+      let o = null;
+      for (let j = line == null ? k : k + 1; j < toks.length; j++) { if (/^(mas|menos|de)$/.test(nrm(toks[j].t))) break; const v = odd(toks[j].t); if (v != null) { o = v; break; } }
+      const x0 = dir === '?' ? toks[i].x0 - W * 0.05 : toks[i].x0;
+      const it = { dir, line, odds: o, y: L.yc };
+      if (x0 < W * 0.35) mains.push({ ...it, sec });
+      else if (x0 > W * 0.42 && dir !== '?') menuItems.push(it);
+      i = k;
+    }
+  }
+  // renglones sin "Más/Menos": se deduce por el par (arriba "Más de", abajo "Menos de" de la misma línea)
+  mains.forEach((m, idx) => {
+    if (m.dir !== '?') return;
+    const nx = mains[idx + 1], pv = mains[idx - 1];
+    if (nx && nx.dir === 'menos' && nx.line === m.line) m.dir = 'mas';
+    else if (pv && pv.dir === 'mas' && pv.line === m.line) m.dir = 'menos';
+  });
+  for (let i = mains.length - 1; i >= 0; i--) if (mains[i].dir === '?') mains.splice(i, 1);
+  const out = [];
+  mains.forEach(m => { if (m.sec) out.push({ type: m.sec.type, team: m.sec.team, mainLine: m.line, dir: m.dir, line: m.line, odds: m.odds, src: 'renglon' }); });
+  const groups = [];
+  // Playdoit: las líneas siempre terminan en .5 y en el menú suben de 1 en 1
+  const fixHalf = (v, ref) => v == null ? null : (Number.isInteger(v) && Math.abs(v + 0.5 - ref) <= 12 ? v + 0.5 : v);
+  menuItems.forEach(it => { const g = groups[groups.length - 1]; if (g && it.dir === g.dir && it.y - g.bottom < hMed * 6) { g.items.push(it); g.bottom = it.y; } else groups.push({ dir: it.dir, top: it.y, bottom: it.y, items: [it] }); });
+  groups.forEach(g => {
+    let best = null, bd = Infinity;
+    mains.filter(m => m.dir === g.dir).forEach(m => { const d = m.y < g.top ? g.top - m.y : m.y > g.bottom ? m.y - g.bottom : Infinity; if (d < bd) { bd = d; best = m; } });
+    if (!best || bd > hMed * 9) return;
+    const its = g.items;
+    its.forEach(it => { it.line = fixHalf(it.line, best.line); if (it.line != null && Math.abs(it.line - best.line) > 12) it.line = null; });
+    const gap = its.length > 1 ? (its[its.length - 1].y - its[0].y) / (its.length - 1) : hMed * 3;
+    for (let pass = 0; pass < 2; pass++) its.forEach((it, idx) => {
+      if (it.line != null) return;
+      const pv = its[idx - 1], nx = its[idx + 1];
+      if (pv && pv.line != null) it.line = pv.line + Math.round((it.y - pv.y) / gap);
+      else if (nx && nx.line != null) it.line = nx.line - Math.round((nx.y - it.y) / gap);
+    });
+    its.filter(it => it.line != null).forEach(it => out.push({ type: best.sec ? best.sec.type : null, team: best.sec ? best.sec.team : '', mainLine: best.line, dir: it.dir, line: it.line, odds: it.odds, src: 'menu' }));
+  });
+  return out.filter(x => x.odds != null);
+}
+
 const OCR = { worker: null, loading: null };
 function loadScript(src) {
   return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('No se pudo descargar el lector gratis. Revisa tu internet.')); document.head.appendChild(s); });
@@ -2147,9 +2235,10 @@ function fileToImage(file) {
     im.onload = () => { URL.revokeObjectURL(u); res(im); }; im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('Formato de imagen no válido.')); }; im.src = u; });
 }
 // Prepara la captura: la agranda y convierte los encabezados rojos (letra blanca) en letra negra sobre blanco
-function ocrCanvas(img) {
-  const sc = img.width < 1300 ? 1300 / img.width : 1;
-  const W = Math.round(img.width * sc), H = Math.round(img.height * sc);
+function ocrCanvas(img, iw, ih) {
+  iw = iw || img.width; ih = ih || img.height;
+  const sc = iw < 1300 ? 1300 / iw : 1;
+  const W = Math.round(iw * sc), H = Math.round(ih * sc);
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d', { willReadFrequently: true }); ctx.drawImage(img, 0, 0, W, H);
   const id = ctx.getImageData(0, 0, W, H), d = id.data, GAP = Math.round(W * 0.05), MINS = W * 0.08;
@@ -2169,17 +2258,47 @@ function ocrCanvas(img) {
   ctx.putImageData(id, 0, 0);
   return cv;
 }
-async function readScreenshotOCR(file, onMsg) {
+async function readScreenshotOCR(file, onMsg, frame) {
   const worker = await getOcrWorker(onMsg);
-  const cv = ocrCanvas(await fileToImage(file));
+  const cv = frame ? ocrCanvas(frame.src, frame.w, frame.h) : ocrCanvas(await fileToImage(file));
   const { data } = await worker.recognize(cv, {}, { blocks: true, text: true });
   const words = [];
   (data.blocks || []).forEach(b => (b.paragraphs || []).forEach(p => (p.lines || []).forEach(l => (l.words || []).forEach(w => words.push(w)))));
   if (!words.length && Array.isArray(data.words)) words.push(...data.words);
   const ws = words.filter(w => (w.confidence ?? 100) > 10).map(w => ({ t: w.text, x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1 }));
+  const text = data.text || ws.map(w => w.t).join(' ');
   const items = parsePlaydoit(ws, cv.width);
-  items.forEach(it => { if (it.market === 'total') it.hint = data.text || ws.map(w => w.t).join(' '); });
-  return items;
+  items.forEach(it => { if (it.market === 'total') it.hint = text; });
+  const q1 = parseQ1Playdoit(ws, cv.width).map(x => ({ ...x, hint: text }));
+  return { items, q1, text };
+}
+// Video: saca un cuadro cada medio segundo, se salta los repetidos y los de pleno scroll
+async function eachVideoFrame(file, cb, onProg) {
+  const url = URL.createObjectURL(file);
+  const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+  try {
+    await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('No se pudo abrir el video. Prueba grabarlo de nuevo.')); setTimeout(() => rej(new Error('El video tardó demasiado en abrir.')), 20000); });
+    const seek = t => new Promise(r => { const done = () => { v.removeEventListener('seeked', done); r(); }; v.addEventListener('seeked', done); v.currentTime = t; });
+    const dur = v.duration || 0, tw = 96, th = Math.max(1, Math.round(96 * v.videoHeight / v.videoWidth));
+    const tc = document.createElement('canvas'); tc.width = tw; tc.height = th; const tx = tc.getContext('2d', { willReadFrequently: true });
+    let prevRaw = null, prevKept = null, kept = 0;
+    const STEP = 0.25, steps = Math.max(1, Math.floor(dur / STEP));
+    for (let k = 0; k < steps; k++) {
+      const t = Math.min(dur - 0.05, 0.1 + k * STEP);
+      await seek(t);
+      tx.drawImage(v, 0, 0, tw, th);
+      const d = tx.getImageData(0, 0, tw, th).data, g = new Float32Array(tw * th);
+      for (let i = 0; i < g.length; i++) g[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+      const diff = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]); return s / a.length; };
+      const motion = prevRaw ? diff(g, prevRaw) : 0; prevRaw = g;
+      onProg && onProg(k + 1, steps, kept);
+      if (motion > 5) continue;                        // en pleno scroll: borroso
+      if (prevKept && diff(g, prevKept) < 1.5) continue;  // igual al anterior
+      prevKept = g; kept++;
+      await cb({ src: v, w: v.videoWidth, h: v.videoHeight }, kept);
+    }
+    return kept;
+  } finally { URL.revokeObjectURL(url); }
 }
 
 function matchDayPlayer(rawName, dayPlayers) {
@@ -2200,10 +2319,75 @@ function matchDayPlayer(rawName, dayPlayers) {
 }
 
 let AI_FAIL_TXT = '';
+// Si el momio no cuadra para nada con la probabilidad DICA, casi seguro el número se leyó mal (ej. "1.5" en vez de "11.5")
+function sane(dir, line, momio, proj, sd) {
+  const z = (line - proj) / Math.max(sd || 1, 0.75);
+  const p = dir === 'mas' ? 1 - normCdf(z) : normCdf(z);
+  return Math.abs(p - 1 / momio) <= 0.3;
+}
+// 1er cuarto: el "Más de" más bajo y el "Menos de" más alto de cada mercado (de todas las pantallas)
+async function saveQ1FromOCR(raw, juegos, inj) {
+  const nick = id => { const w = normN(teamName(id)).split(' '); return w[w.length - 1]; };
+  const teamOf = txt => {
+    const q = ' ' + normN(txt).replace(/[^a-z0-9 ]/g, ' ') + ' ';
+    const ids = [...new Set(juegos.flatMap(g => [g.local, g.visitante]))];
+    const hit = ids.filter(id => q.includes(' ' + nick(id) + ' ') || q.includes(' ' + teamAbbr(id).toLowerCase() + ' '));
+    return hit.length === 1 ? hit[0] : null;
+  };
+  const gameOfText = txt => {
+    const q = normN(txt), has = id => q.includes(nick(id));
+    return juegos.find(g => has(g.local) && has(g.visitante)) || (juegos.length === 1 ? juegos[0] : null);
+  };
+  // filas a las que se les tapó el encabezado: se asignan por su línea principal si coincide con un solo mercado
+  const secByMain = {};
+  raw.forEach(x => { if (x.type) { const k = x.mainLine; (secByMain[k] = secByMain[k] || new Map()).set(x.type + '|' + (x.team || ''), x); } });
+  raw.forEach(x => { if (!x.type && secByMain[x.mainLine] && secByMain[x.mainLine].size === 1) { const r = [...secByMain[x.mainLine].values()][0]; x.type = r.type; x.team = r.team; } });
+  const rows = raw.filter(x => x.type && x.odds > 1.18);
+  // equipo por nombre en el encabezado; si quedó tapado, por su línea principal
+  rows.forEach(x => { if (x.type === 'team') x.teamId = teamOf(x.team); });
+  const byMain = {};
+  rows.forEach(x => { if (x.type === 'team' && x.teamId) (byMain[x.mainLine] = byMain[x.mainLine] || new Set()).add(x.teamId); });
+  rows.forEach(x => { if (x.type === 'team' && !x.teamId && byMain[x.mainLine] && byMain[x.mainLine].size === 1) x.teamId = [...byMain[x.mainLine]][0]; });
+  const teamsSeen = new Set(rows.filter(x => x.teamId).map(x => x.teamId));
+  const groups = {};
+  rows.forEach(x => {
+    let g = null, key;
+    if (x.type === 'team') { if (!x.teamId) return; g = juegos.find(j => j.local === x.teamId || j.visitante === x.teamId); key = 'q1eq|' + x.teamId; }
+    else { g = gameOfText(x.hint || '') || juegos.find(j => teamsSeen.has(j.local) || teamsSeen.has(j.visitante)); if (!g) return; key = 'q1|' + g.local; }
+    if (!g) return;
+    const G = groups[key] = groups[key] || { tipo: x.type === 'team' ? 'q1eq' : 'q1', teamId: x.type === 'team' ? x.teamId : g.local, g, mas: null, menos: null };
+    if (x.dir === 'mas' && (!G.mas || x.line < G.mas.line)) G.mas = x;
+    if (x.dir === 'menos' && (!G.menos || x.line > G.menos.line)) G.menos = x;
+  });
+  const keys = Object.keys(groups);
+  if (!keys.length) return '';
+  const ref = doc(db, 'lineas', J.fecha), snap = await getDoc(ref);
+  let list = snap.exists() ? (snap.data().mercados || []) : [];
+  const now = new Date().toISOString(), done = [];
+  for (const k of keys) {
+    const G = groups[k], L = G.g.local, A = G.g.visitante;
+    const r = await q1ProjFor(L, A, inj);
+    const rival = G.teamId === L ? A : L;
+    const o = { tipo: G.tipo, field: 'pts', teamId: G.teamId, rivalId: G.tipo === 'q1' ? A : rival };
+    const key = mktKey(o, { local: L, visitante: A });
+    const opts = [G.mas, G.menos].filter(Boolean).map(x => ({ dir: x.dir, linea: x.line, momio: +x.odds.toFixed(3) }));
+    const proj = r ? (G.tipo === 'q1' ? +(r.q1L + r.q1A).toFixed(1) : (G.teamId === L ? r.q1L : r.q1A)) : null;
+    const sd = r ? (G.tipo === 'q1' ? r.sdT : (G.teamId === L ? r.sdL : r.sdA)) : null;
+    list = list.filter(m => m.key !== key);
+    list.push({ key, tipo: G.tipo, field: 'pts', local: L, visitante: A, teamId: o.teamId, rivalId: o.rivalId, nombre: null, eid: null, proj, sd, opts, at: now, by: ME });
+    done.push(`${G.tipo === 'q1' ? `Total 1Q ${teamAbbr(A)}@${teamAbbr(L)}` : `1Q ${teamAbbr(G.teamId)}`}: ${opts.map(x => `${x.dir === 'mas' ? 'Más' : 'Menos'} ${lineFmt(x.linea)} (${x.momio.toFixed(2)})`).join(' / ')}`);
+  }
+  await setDoc(ref, { fecha: J.fecha, mercados: list }, { merge: true });
+  LINES[J.fecha] = list;
+  let recTxt = '';
+  try { const st = await saveQ1Recs(J.fecha); await writeQ1Summary(); recTxt = st.saved ? ` ${st.saved} ${st.saved === 1 ? 'recomendación' : 'recomendaciones'} del 1er cuarto entraron al récord.` : ''; } catch (e) { console.warn('Récord 1Q', e); }
+  if (currentTab === 'q1') { renderQ1(); renderQ1Rec(); }
+  return ` <b>1er cuarto:</b> ${done.map(esc).join(' · ')}.${recTxt}`;
+}
 const VALID_AI_MARKETS = new Set(['pts', 'reb', 'ast', 'fg3m', 'pra', 'pr', 'pa', 'ra', 'stl', 'blk', 'sb', 'total']);
 
 async function processPlaydoitScreenshots(fileList) {
-  const files = [...fileList].filter(f => f && f.type.startsWith('image/'));
+  const files = [...fileList].filter(f => f && (f.type.startsWith('image/') || f.type.startsWith('video/') || /\.(mov|mp4|m4v|webm)$/i.test(f.name || '')));
   if (!files.length) return;
   const apiKey = getGeminiKey() || getClaudeKey();
   const stBox = $('ai-status');
@@ -2266,15 +2450,32 @@ async function processPlaydoitScreenshots(fileList) {
       .slice(0, 140)
       .join(', ');
 
-    const rawExtracted = [], failed = [], usedVia = new Set();
+    const rawExtracted = [], failed = [], usedVia = new Set(), q1Raw = [];
     let lastFail = '';
     for (let i = 0; i < files.length; i++) {
+      const isVideo = files[i].type.startsWith('video/') || /\.(mov|mp4|m4v|webm)$/i.test(files[i].name || '');
+      if (isVideo) {
+        let found = 0;
+        const vtag = `Video <b>${i + 1} de ${files.length}</b>`;
+        try {
+          const kept = await eachVideoFrame(files[i], async (frame, n) => {
+            const r = await readScreenshotOCR(null, () => { stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> ${vtag}<br><small>Preparando el lector gratis (solo la primera vez tarda un poco)…</small>`); }, frame);
+            r.items.forEach(x => x.frame = `${i}:${n}`);
+            rawExtracted.push(...r.items); q1Raw.push(...r.q1); found += r.items.length + r.q1.length;
+          }, (k, steps, kept) => { stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> ${vtag}: revisando ${Math.round(k / steps * 100)}% · ${kept} pantallas leídas…`); });
+          if (found) usedVia.add('lector gratis (video)');
+          else { failed.push(i + 1); lastFail = `No se encontraron líneas en el video (${kept} pantallas revisadas). Detente 1 segundo en cada pantalla y que se vea el encabezado rojo del mercado.`; }
+        } catch (e) { console.warn('Video no leído', e); failed.push(i + 1); lastFail = e.message || 'No se pudo leer el video.'; }
+        continue;
+      }
       const tag = `Leyendo captura <b>${i + 1} de ${files.length}</b>…`;
       stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> ${tag}`);
       // 1) lector gratis en el celular (sin internet de IA, nunca se satura)
       try {
-        const its = await readScreenshotOCR(files[i], () => { stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> ${tag}<br><small>Preparando el lector gratis (solo la primera vez tarda un poco)…</small>`); });
-        if (its.length) { rawExtracted.push(...its); usedVia.add('lector gratis'); continue; }
+        const r = await readScreenshotOCR(files[i], () => { stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> ${tag}<br><small>Preparando el lector gratis (solo la primera vez tarda un poco)…</small>`); });
+        r.items.forEach(x => x.frame = `${i}`);
+        q1Raw.push(...r.q1);
+        if (r.items.length || r.q1.length) { rawExtracted.push(...r.items); usedVia.add('lector gratis'); continue; }
       } catch (e) { console.warn('Lector gratis falló', e); }
       // 2) si no pudo, usa la IA de respaldo (si hay llave)
       if (!apiKey) { failed.push(i + 1); lastFail = 'El lector gratis no encontró líneas en esa captura. Revisa que se vean el encabezado rojo del mercado, los nombres y los momios.'; continue; }
@@ -2292,6 +2493,16 @@ async function processPlaydoitScreenshots(fileList) {
     }
     const failTxt = failed.length ? ` <b>No se pudo leer la captura ${failed.join(', ')}</b>: ${esc(lastFail || 'intenta de nuevo')}` : '';
     AI_FAIL_TXT = failTxt;
+
+    // 1er cuarto (total y por equipo): se guarda aparte
+    let q1Msg = '';
+    if (q1Raw.length) { try { q1Msg = await saveQ1FromOCR(q1Raw, juegos, inj); } catch (e) { console.error(e); q1Msg = ' No se pudieron guardar las líneas del 1er cuarto: ' + esc(e.message || ''); } }
+    if (!rawExtracted.length && q1Msg) { stBox.innerHTML = noteHTML(`<b>¡Listo!</b>${q1Msg}${AI_FAIL_TXT}`, AI_FAIL_TXT ? 'warn' : ''); return; }
+
+    // la misma línea leída en dos mercados distintos (encabezado mal leído en algún cuadro): no se guarda
+    const mk4 = x => [normN(x.player), x.dir, x.line, x.odds].join('|'), seenMk = {};
+    rawExtracted.forEach(x => { if (x.market === 'total') return; const k = mk4(x); (seenMk[k] = seenMk[k] || new Set()).add(x.market); });
+    for (let k = rawExtracted.length - 1; k >= 0; k--) { const x = rawExtracted[k]; if (x.market !== 'total' && seenMk[mk4(x)].size > 1) rawExtracted.splice(k, 1); }
 
     if (!rawExtracted.length) {
       stBox.innerHTML = noteHTML(failed.length === files.length ? esc(lastFail || AI_BUSY_MSG)
@@ -2333,6 +2544,7 @@ async function processPlaydoitScreenshots(fileList) {
         const proj = +(gp.ptsL + gp.ptsA).toFixed(1);
         const sd = +Math.max(16, Math.hypot(gp.sdL, gp.sdA)).toFixed(2);
         if ((dir === 'mas' && line >= proj) || (dir === 'menos' && line <= proj)) { ignoredCount++; continue; }
+        if (!sane(dir, line, momio, proj, sd)) { ignoredCount++; continue; }
         const o = { tipo: 'total', field: 'pts', teamId: targetG.local, rivalId: targetG.visitante, proj, sd };
         const c = { fecha: J.fecha, local: targetG.local, visitante: targetG.visitante };
         const key = mktKey(o, c);
@@ -2357,6 +2569,7 @@ async function processPlaydoitScreenshots(fileList) {
 
       if (dir === 'mas' && line >= proj) { ignoredCount++; continue; }
       if (dir === 'menos' && line <= proj) { ignoredCount++; continue; }
+      if (!sane(dir, line, momio, proj, sd)) { ignoredCount++; continue; }   // número mal leído
 
       const o = { tipo: 'jugador', field, teamId: pl.teamId, rivalId: pl.rivalId, nombre: pl.nombre, eid: pl.eid, proj, sd };
       const c = { fecha: J.fecha, local: pl.local, visitante: pl.visitante };
@@ -2367,7 +2580,8 @@ async function processPlaydoitScreenshots(fileList) {
 
     const validKeys = Object.keys(grouped);
     if (!validKeys.length) {
-      stBox.innerHTML = noteHTML(`Se leyeron ${rawExtracted.length} líneas en la captura, pero ninguna tenía ventaja a favor respecto a tu proyección DICA (o tenían momios fuera de rango).` + AI_FAIL_TXT, 'warn');
+      if (q1Msg) { stBox.innerHTML = noteHTML(`<b>¡Listo!</b>${q1Msg}${AI_FAIL_TXT}`); return; }
+      stBox.innerHTML = noteHTML(`Se leyeron ${rawExtracted.length} líneas de jugadores/totales, pero ninguna tenía ventaja a favor respecto a tu proyección DICA (o tenían momios fuera de rango).` + AI_FAIL_TXT, q1Msg ? '' : 'warn');
       return;
     }
 
@@ -2414,7 +2628,7 @@ async function processPlaydoitScreenshots(fileList) {
     renderLines();
     if (currentPicks.length) renderPicks();
 
-    stBox.innerHTML = noteHTML(`<b>¡Listo!</b> Se guardaron <b>${validKeys.length} mercado${validKeys.length === 1 ? '' : 's'}</b> (${totalSavedOpts} línea${totalSavedOpts === 1 ? '' : 's'} filtrada${totalSavedOpts === 1 ? '' : 's'} con ventaja DICA).${ignoredCount ? ` Se descartaron ${ignoredCount} líneas sin ventaja o fuera de rango.` : ''}${AI_FAIL_TXT}<br><small>Leído con ${[...usedVia].join(' y ') || 'IA'}.</small>`, AI_FAIL_TXT ? 'warn' : '');
+    stBox.innerHTML = noteHTML(`<b>¡Listo!</b>${q1Msg} Se guardaron <b>${validKeys.length} mercado${validKeys.length === 1 ? '' : 's'}</b> (${totalSavedOpts} línea${totalSavedOpts === 1 ? '' : 's'} filtrada${totalSavedOpts === 1 ? '' : 's'} con ventaja DICA).${ignoredCount ? ` Se descartaron ${ignoredCount} líneas sin ventaja o fuera de rango.` : ''}${AI_FAIL_TXT}<br><small>Leído con ${[...usedVia].join(' y ') || 'IA'}.</small>`, AI_FAIL_TXT ? 'warn' : '');
   } catch (e) {
     console.error(e);
     stBox.innerHTML = noteHTML('Error al procesar capturas: ' + esc(e.message || 'error desconocido'), 'bad');
@@ -2448,29 +2662,57 @@ window.addEventListener('paste', e => {
 });
 
 // --- PRIMER CUARTO ---
-let q1For = null, Q1R = null;
+let q1For = null, Q1R = null, Q1SUM = null; const Q1DAY = {};
 async function loadQ1Rec(force) {
-  if (!isAdmin) { $('q1-rec').innerHTML = ''; return; }
+  if (!isAdmin) {   // tus usuarios leen el resumen (1 lectura) y el día que están viendo (1 lectura)
+    try {
+      if (!Q1SUM || force) { const s = await getDoc(doc(db, 'liga', 'record_q1')); Q1SUM = s.exists() ? s.data() : { g: 0, p: 0, e: 0, racha: '', hist: [] }; }
+      if (J.fecha && !(J.fecha in Q1DAY)) { const d = await getDoc(doc(db, 'privado', 'q1-' + J.fecha)); Q1DAY[J.fecha] = d.exists() ? (d.data().picks || []) : []; }
+    } catch (e) { console.warn('Récord 1Q no disponible', e); Q1SUM = Q1SUM || { g: 0, p: 0, e: 0, racha: '', hist: [] }; }
+    renderQ1Rec(); return;
+  }
   if (Q1R && !force) { renderQ1Rec(); return; }
   try { const sn = await getDocs(collection(db, 'privado')); Q1R = sn.docs.map(d => d.data()).filter(d => d.tipo === 'q1').sort((a, b) => b.fecha.localeCompare(a.fecha)); }
   catch (e) { console.warn('Récord 1Q no disponible', e); Q1R = []; }
   renderQ1Rec();
 }
 function renderQ1Rec() {
-  const box = $('q1-rec'); if (!isAdmin) { box.innerHTML = ''; return; }
+  const box = $('q1-rec');
+  if (!isAdmin) { renderQ1RecPublic(box); return; }
   if (currentTab === 'q1' && J.fecha === q1For && (cache.jornadas[J.fecha] || []).length && !renderQ1Rec.busy) { renderQ1Rec.busy = true; try { renderQ1(); } finally { renderQ1Rec.busy = false; } }
   const all = (Q1R || []).flatMap(d => (d.picks || []).map(p => ({ ...p, fecha: d.fecha })));
   const g = all.filter(p => p.estado === 'ganado').length, pe = all.filter(p => p.estado === 'perdido').length;
   const done = all.filter(p => p.estado === 'ganado' || p.estado === 'perdido').sort((a, b) => b.fecha.localeCompare(a.fecha));
   let racha = ''; if (done.length) { const e = done[0].estado; let n = 0; for (const p of done) { if (p.estado === e) n++; else break; } racha = (e === 'ganado' ? 'G' : 'P') + n; }
   const pend = all.filter(p => p.estado === 'pendiente').length;
-  box.innerHTML = `<div class="q1rec-box"><div class="t">TU RÉCORD PRIVADO · 1ER CUARTO</div>
+  box.innerHTML = `<div class="q1rec-box"><div class="t">RÉCORD · 1ER CUARTO <span style="opacity:.6">(lo ven todos tus usuarios)</span></div>
     <div class="k"><div><b>${g}-${pe}</b><span>RÉCORD</span></div><div><b>${g + pe ? Math.round(g / (g + pe) * 100) + '%' : '–'}</b><span>ACIERTO</span></div><div><b>${racha || '–'}</b><span>RACHA</span></div></div>
     <button class="g" id="q1-grade"><i class="fa-solid fa-rotate"></i> RESULTADOS${pend ? ` (${pend} pendiente${pend === 1 ? '' : 's'})` : ''}</button>
     ${Q1GMSG ? `<p style="font-size:12px;margin:8px 0 0;opacity:.85">${Q1GMSG}</p>` : ''}
     ${all.length ? `<details><summary>Ver historial (${all.length})</summary>${all.slice(0, 80).map(p => `<div class="q1h-row"><span>${esc(fechaLabel(p.fecha))} · ${esc(p.tipo === 'q1' ? `${teamAbbr(p.visitante)}@${teamAbbr(p.local)} total` : `${teamAbbr(p.teamId)} 1Q`)} · ${p.dir === 'mas' ? 'O' : 'U'} ${lineFmt(p.linea)}</span><span class="e ${p.estado}">${p.estado === 'ganado' ? '✓' : p.estado === 'perdido' ? '✗' : p.estado === 'empate' ? '=' : '…'}${p.real != null ? ' ' + p.real : ''}</span></div>`).join('')}</details>` : '<p class="small-note" style="color:#fff;opacity:.7;margin:8px 0 0">Se empieza a llenar cuando presiones CALCULAR 1ER CUARTO con líneas capturadas.</p>'}
   </div>`;
   if ($('q1-grade')) $('q1-grade').addEventListener('click', gradeQ1);
+}
+function q1HistRow(p) {
+  return `<div class="q1h-row"><span>${esc(fechaLabel(p.fecha))} · ${esc(p.tipo === 'q1' ? `${teamAbbr(p.visitante)}@${teamAbbr(p.local)} total` : `${teamAbbr(p.teamId)} 1Q`)} · ${p.dir === 'mas' ? 'O' : 'U'} ${lineFmt(p.linea)}</span><span class="e ${p.estado}">${p.estado === 'ganado' ? '✓' : p.estado === 'perdido' ? '✗' : p.estado === 'empate' ? '=' : '…'}${p.real != null ? ' ' + p.real : ''}</span></div>`;
+}
+function renderQ1RecPublic(box) {
+  const S = Q1SUM || { g: 0, p: 0, racha: '', hist: [] };
+  if (currentTab === 'q1' && J.fecha === q1For && (cache.jornadas[J.fecha] || []).length && !renderQ1Rec.busy) { renderQ1Rec.busy = true; try { renderQ1(); } finally { renderQ1Rec.busy = false; } }
+  box.innerHTML = `<div class="q1rec-box"><div class="t">RÉCORD · 1ER CUARTO</div>
+    <div class="k"><div><b>${S.g}-${S.p}</b><span>RÉCORD</span></div><div><b>${S.g + S.p ? Math.round(S.g / (S.g + S.p) * 100) + '%' : '–'}</b><span>ACIERTO</span></div><div><b>${S.racha || '–'}</b><span>RACHA</span></div></div>
+    ${(S.hist || []).length ? `<details><summary>Ver historial (${S.hist.length})</summary>${S.hist.map(q1HistRow).join('')}</details>` : '<p class="small-note" style="color:#fff;opacity:.7;margin:8px 0 0">Todavía no hay picks del 1er cuarto calificados.</p>'}
+  </div>`;
+}
+// Resumen del récord que leen tus usuarios (lo actualiza el admin al calcular o calificar)
+async function writeQ1Summary() {
+  if (!isAdmin || !Q1R) return;
+  const all = Q1R.flatMap(d => (d.picks || []).map(p => ({ ...p, fecha: d.fecha })));
+  const g = all.filter(p => p.estado === 'ganado').length, pe = all.filter(p => p.estado === 'perdido').length, e = all.filter(p => p.estado === 'empate').length;
+  const done = all.filter(p => p.estado === 'ganado' || p.estado === 'perdido').sort((a, b) => b.fecha.localeCompare(a.fecha));
+  let racha = ''; if (done.length) { const st = done[0].estado; let n = 0; for (const p of done) { if (p.estado === st) n++; else break; } racha = (st === 'ganado' ? 'G' : 'P') + n; }
+  const hist = all.sort((a, b) => b.fecha.localeCompare(a.fecha)).slice(0, 80).map(p => ({ fecha: p.fecha, tipo: p.tipo, local: p.local, visitante: p.visitante, teamId: p.teamId, dir: p.dir, linea: p.linea, estado: p.estado, real: p.real ?? null }));
+  await setDoc(doc(db, 'liga', 'record_q1'), { g, p: pe, e, racha, hist, at: new Date().toISOString() });
 }
 async function saveQ1Recs(fecha) {
   const mk = (LINES[fecha] || []).filter(m => Q1T.has(m.tipo));
@@ -2522,6 +2764,7 @@ async function gradeQ1(silent = false) {
       }
       await setDoc(doc(db, 'privado', 'q1-' + d.fecha), { tipo: 'q1', fecha: d.fecha, picks: d.picks });
     }
+    try { await writeQ1Summary(); } catch (e) { console.warn('Resumen 1Q', e); }
     Q1GMSG = !n && !wait ? 'No hay picks pendientes por calificar.'
       : `${n} calificado${n === 1 ? '' : 's'}.${wait ? ` ${wait} siguen pendientes porque su 1er cuarto todavía no termina.` : ''}`;
     renderQ1Rec();
@@ -2546,7 +2789,8 @@ function q1ResBadge(pk) {
 }
 function q1MktHTML(m, title) {
   const R = recOf(m), r = R.best;
-  const pk = isAdmin ? ((Q1R || []).find(d => d.fecha === J.fecha)?.picks || []).find(p => p.key === m.key) : null;
+  const dayPicks = isAdmin ? ((Q1R || []).find(d => d.fecha === J.fecha)?.picks || []) : (Q1DAY[J.fecha] || []);
+  const pk = dayPicks.find(p => p.key === m.key) || null;
   const same = pk && r && pk.dir === r.dir && pk.linea === r.linea;
   const rec = r ? `<div class="q1rec ${r.dir === 'menos' ? 'under' : ''}"><span class="tx"><b>${ouTxt(r)}</b> Te recomiendo esta · ${Math.round(r.prob * 100)}% de probabilidad${r.momio ? ` · momio ${r.momio.toFixed(2)}` : ''}</span>${same ? q1ResBadge(pk) : ''}</div>`
     : `<div class="q1rec nov"><span class="tx">${esc(R.why)}</span></div>`;
@@ -2577,6 +2821,7 @@ function renderQ1() {
       await refreshLineProj(f);
       try {
         const st = await saveQ1Recs(f);
+        try { await writeQ1Summary(); } catch (e) { console.warn(e); }
         const parts = [];
         if (!st.total) parts.push('No hay líneas del 1er cuarto capturadas para esta jornada, así que no se guardó nada en tu récord.');
         else {
@@ -3391,6 +3636,7 @@ $('view-btn').addEventListener('click', () => {
   if (currentPicks.length) renderPicks();
   if (resLoaded) renderResultados();
   applyQ1Tab();
+  if (currentTab === 'q1') { renderQ1(); loadQ1Rec(true); }
   if (currentTab === 'q1' && J.fecha in LINES) { renderQ1(); renderQ1Rec(); }
 });
 let currentPicks = [], picksFilter = 'all', picksLoadedFor = null;
