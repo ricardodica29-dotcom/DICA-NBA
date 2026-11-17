@@ -1843,22 +1843,22 @@ async function discoverFlashModels(apiKey) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
     if (!r.ok) return [];
     const d = await r.json();
+    const rank = n => (/latest$/i.test(n) ? 0 : 0) + (/preview|exp/i.test(n) ? 10 : 0) + (/lite|8b/i.test(n) ? 3 : 0);
     return (d.models || [])
-      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent') && /gemini-.*flash/i.test(m.name) && !/2\.0|1\.5/i.test(m.name))
+      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent') && /gemini.*flash/i.test(m.name)
+        && !/1\.5|2\.0|tts|image|audio|live|native|embed|thinking/i.test(m.name))
       .map(m => m.name.replace(/^models\//, ''))
-      .sort((a, b) => {
-        // Prioriza versiones estándar sobre -lite, y versiones más nuevas primero
-        const aLite = /lite|8b/i.test(a) ? 1 : 0;
-        const bLite = /lite|8b/i.test(b) ? 1 : 0;
-        if (aLite !== bLite) return aLite - bLite;
-        return b.localeCompare(a, undefined, { numeric: true });
-      });
+      .sort((a, b) => rank(a) - rank(b) || b.localeCompare(a, undefined, { numeric: true }))
+      .slice(0, 5);
   } catch {
     return [];
   }
 }
+// Google devuelve 503/429 cuando sus servidores gratuitos están saturados: no es error de la app
+const isTransientAi = e => e && (e.status === 503 || e.status === 429 || e.status === 500 || /high demand|overloaded|unavailable|quota|rate|try again/i.test(String(e.message || '')));
+const AI_BUSY_MSG = 'Los servidores de Google Gemini están saturados en este momento (es del lado de Google, no de tu app). Espera 1 o 2 minutos y vuelve a subir la captura.';
 
-async function callGeminiVision(apiKey, base64Jpeg, playerNamesHint) {
+async function callGeminiVision(apiKey, base64Jpeg, playerNamesHint, onWait = () => {}) {
   const prompt = `Eres un extractor experto de líneas de apuestas deportivas de NBA en la casa Playdoit (Altenar) en español.
 Analiza esta captura de pantalla y extrae TODAS las líneas de jugadores y totales de partido visibles.
 
@@ -1903,6 +1903,8 @@ Reglas CRÍTICAS sobre la interfaz móvil de Playdoit:
       const msg = errData.error?.message || `Error HTTP ${res.status}`;
       const err = new Error(msg);
       err.status = res.status;
+      const rd = (errData.error?.details || []).find(x => x.retryDelay)?.retryDelay;   // ej. "12s"
+      if (rd) err.retryMs = Math.min(30000, (parseFloat(rd) || 0) * 1000);
       throw err;
     }
     const data = await res.json();
@@ -1913,29 +1915,33 @@ Reglas CRÍTICAS sobre la interfaz móvil de Playdoit:
   };
 
   const discovered = await discoverFlashModels(apiKey);
-  const candidates = discovered.length ? discovered : ['gemini-3.8-flash', 'gemini-3.8-flash-lite', 'gemini-2.5-flash'];
-  let lastErr = null;
-
+  const candidates = [...new Set([...discovered, 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemini-2.5-flash-lite'])].slice(0, 4);   // máx. ~40 s de espera
+  const WAITS = [2500, 6000];   // 2 reintentos por modelo, cada vez esperando más
+  let lastErr = null, sawBusy = false;
   for (const model of candidates) {
-    // Reintenta hasta 2 veces por modelo si hay saturación temporal (503 / 429)
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt <= WAITS.length; attempt++) {
       try {
         return await tryModel(model);
       } catch (e) {
         lastErr = e;
         const msg = String(e.message || '');
-        const isTransient = e.status === 503 || e.status === 429 || /high demand|overloaded|unavailable|quota|rate/i.test(msg);
-        const isMissing = e.status === 404 || /no longer available|not found|not supported/i.test(msg);
-        if (isTransient) {
-          await sleepMs(1100 * (attempt + 1));
-          continue; // reintenta o pasa al siguiente modelo
+        if (e.status === 400 && /api key|API_KEY/i.test(msg) || e.status === 403) throw new Error('Tu API Key de Gemini no es válida o no tiene permiso. Revísala con el botón "API Key".');
+        if (e instanceof SyntaxError) break;   // respuesta rara: prueba otro modelo
+        if (e.status === 404 || /no longer available|not found|not supported/i.test(msg)) break;
+        if (isTransientAi(e)) {
+          sawBusy = true;
+          if (attempt === WAITS.length) break;   // ya no insistir con este modelo, pasar al siguiente
+          const ms = e.retryMs || WAITS[attempt];
+          onWait(Math.round(ms / 1000), model);
+          await sleepMs(ms);
+          continue;
         }
-        if (isMissing) break; // salta de inmediato al siguiente modelo
-        throw e; // error de API key inválida u otro error fatal
+        throw e;
       }
     }
   }
-  throw lastErr || new Error('Los servidores de IA están saturados en este momento. Intenta de nuevo en unos segundos.');
+  if (sawBusy) throw new Error(AI_BUSY_MSG);
+  throw lastErr || new Error(AI_BUSY_MSG);
 }
 
 function matchDayPlayer(rawName, dayPlayers) {
@@ -1955,6 +1961,7 @@ function matchDayPlayer(rawName, dayPlayers) {
   return dayPlayers.find(p => normN(p.nombre).includes(q) || q.includes(normN(p.nombre))) || null;
 }
 
+let AI_FAIL_TXT = '';
 const VALID_AI_MARKETS = new Set(['pts', 'reb', 'ast', 'fg3m', 'pra', 'pr', 'pa', 'ra', 'stl', 'blk', 'sb', 'total']);
 
 async function processPlaydoitScreenshots(fileList) {
@@ -2023,16 +2030,29 @@ async function processPlaydoitScreenshots(fileList) {
       .slice(0, 140)
       .join(', ');
 
-    const rawExtracted = [];
+    const rawExtracted = [], failed = [];
+    let lastFail = '';
     for (let i = 0; i < files.length; i++) {
-      stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> Leyendo captura <b>${i + 1} de ${files.length}</b> con IA…`);
-      const b64 = await prepareImageBase64(files[i]);
-      const items = await callGeminiVision(apiKey, b64, hintNames);
-      rawExtracted.push(...items);
+      const tag = `Leyendo captura <b>${i + 1} de ${files.length}</b> con IA…`;
+      stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> ${tag}`);
+      try {
+        const b64 = await prepareImageBase64(files[i]);
+        const items = await callGeminiVision(apiKey, b64, hintNames, (s, model) => {
+          stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> ${tag}<br><small>Google está saturado, reintentando en ${s} s (${esc(model)})…</small>`, 'warn');
+        });
+        rawExtracted.push(...items);
+      } catch (e) {
+        if (/API Key/i.test(e.message || '')) throw e;   // la llave está mal: no tiene caso seguir
+        console.warn('Captura no leída', i + 1, e);
+        failed.push(i + 1); lastFail = e.message || '';
+      }
     }
+    const failTxt = failed.length ? ` <b>${failed.length} captura${failed.length === 1 ? '' : 's'} no se pudo leer</b> (${failed.length === files.length ? esc(lastFail) : 'servidores de Google saturados'}): vuelve a subir${failed.length === 1 ? 'la' : 'las'} en 1 o 2 minutos.` : '';
+    AI_FAIL_TXT = failTxt;
 
     if (!rawExtracted.length) {
-      stBox.innerHTML = noteHTML('La IA no detectó líneas de jugadores en esas capturas. Asegúrate de que se vean los nombres y momios.', 'warn');
+      stBox.innerHTML = noteHTML(failed.length === files.length ? esc(lastFail || AI_BUSY_MSG)
+        : 'La IA no detectó líneas de jugadores en esas capturas. Asegúrate de que se vean los nombres y momios.' + failTxt, failed.length === files.length ? 'bad' : 'warn');
       return;
     }
 
@@ -2100,7 +2120,7 @@ async function processPlaydoitScreenshots(fileList) {
 
     const validKeys = Object.keys(grouped);
     if (!validKeys.length) {
-      stBox.innerHTML = noteHTML(`Se leyeron ${rawExtracted.length} líneas en la captura, pero ninguna tenía ventaja a favor respecto a tu proyección DICA (o tenían momios fuera de rango).`, 'warn');
+      stBox.innerHTML = noteHTML(`Se leyeron ${rawExtracted.length} líneas en la captura, pero ninguna tenía ventaja a favor respecto a tu proyección DICA (o tenían momios fuera de rango).` + AI_FAIL_TXT, 'warn');
       return;
     }
 
@@ -2147,7 +2167,7 @@ async function processPlaydoitScreenshots(fileList) {
     renderLines();
     if (currentPicks.length) renderPicks();
 
-    stBox.innerHTML = noteHTML(`<b>¡Listo!</b> Se guardaron <b>${validKeys.length} mercado${validKeys.length === 1 ? '' : 's'}</b> (${totalSavedOpts} línea${totalSavedOpts === 1 ? '' : 's'} filtrada${totalSavedOpts === 1 ? '' : 's'} con ventaja DICA).${ignoredCount ? ` Se descartaron ${ignoredCount} líneas sin ventaja o fuera de rango.` : ''}`);
+    stBox.innerHTML = noteHTML(`<b>¡Listo!</b> Se guardaron <b>${validKeys.length} mercado${validKeys.length === 1 ? '' : 's'}</b> (${totalSavedOpts} línea${totalSavedOpts === 1 ? '' : 's'} filtrada${totalSavedOpts === 1 ? '' : 's'} con ventaja DICA).${ignoredCount ? ` Se descartaron ${ignoredCount} líneas sin ventaja o fuera de rango.` : ''}${AI_FAIL_TXT}`, AI_FAIL_TXT ? 'warn' : '');
   } catch (e) {
     console.error(e);
     stBox.innerHTML = noteHTML('Error al procesar capturas: ' + esc(e.message || 'error desconocido'), 'bad');
