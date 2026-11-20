@@ -403,6 +403,11 @@ table.log td.hl{font-weight:800}
 /* Picks */
 .pick{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:12px 14px}
 .pick+.pick{margin-top:8px}
+.pk-game{display:flex;align-items:center;gap:8px;margin:18px 0 8px;padding:8px 10px;background:var(--ink,#1b1714);color:#fff;border-radius:4px;font-weight:800;font-size:13px;letter-spacing:.3px}
+.pk-game:first-child,.note+div+.pk-game{margin-top:0}
+.pk-game .sp{flex:1}.pk-game b{color:#f3c969;font-weight:800}.pk-game em{font-style:normal;font-weight:600;opacity:.65;font-size:11px}
+.at small.gt{display:block;font-size:10px;font-weight:800;opacity:.75;margin-top:2px;white-space:nowrap}
+.at{text-align:center}
 .pick .who{font-weight:700;font-size:15px;line-height:1.2}
 .pick .ctx{font-size:12px;color:var(--muted);margin-top:2px}
 .pick .tier{display:inline-block;margin-top:6px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px}
@@ -1061,8 +1066,36 @@ document.querySelectorAll('.jornada-sel').forEach(s => s.addEventListener('chang
   onJornada();
 }));
 
+// Horarios de los partidos (ESPN), en la hora de tu celular
+const GT = {};
+async function loadGameTimes(fecha) {
+  if (!fecha || GT[fecha]) return GT[fecha] || {};
+  const map = {};
+  try {
+    const sb = await Promise.race([espnSB(fecha), new Promise((_, r) => setTimeout(() => r(new Error('tiempo')), 5000))]);
+    (sb.events || []).forEach(e => {
+      const c = e.competitions?.[0], h = c?.competitors?.find(x => x.homeAway === 'home'), a = c?.competitors?.find(x => x.homeAway === 'away');
+      const L = ourTeamByEspn(h?.id ?? h?.team?.id, h?.team?.abbreviation), A = ourTeamByEspn(a?.id ?? a?.team?.id, a?.team?.abbreviation);
+      const d = new Date(e.date || c?.date); if (!L || !A || isNaN(d)) return;
+      const st = c?.status?.type?.state;
+      map[L + '|' + A] = { ts: d.getTime(), label: st === 'post' ? 'Final' : st === 'in' ? 'En vivo' : d.toLocaleTimeString('es-MX', { hour: 'numeric', minute: '2-digit' }).replace(/\s*([ap])\.?\s*m\.?/i, ' $1m') };
+    });
+    GT[fecha] = map;
+  } catch (e) { console.warn('Sin horarios', e); }
+  return map;
+}
+const gTime = (L, A, f = J.fecha) => (GT[f] || {})[L + '|' + A] || null;
+function sortByTime(juegos, f = J.fecha) {
+  const T = GT[f]; if (!T) return juegos;
+  return juegos.map((g, i) => ({ g, i })).sort((x, y) => ((T[x.g.local + '|' + x.g.visitante]?.ts ?? 9e15) - (T[y.g.local + '|' + y.g.visitante]?.ts ?? 9e15)) || x.i - y.i).map(x => x.g);
+}
+const atHTML = (L, A) => { const t = gTime(L, A); return `<span class="at">en${t ? `<small class="gt">${esc(t.label)}</small>` : ''}</span>`; };
+
 async function onJornada() {
+  await loadGameTimes(J.fecha);
   const juegos = await getJornada(J.fecha);
+  if (cache.jornadas[J.fecha]) cache.jornadas[J.fecha] = sortByTime(cache.jornadas[J.fecha]);
+  juegos.splice(0, juegos.length, ...sortByTime(juegos));
   renderVegasGames(juegos);
   renderJugGames(juegos);
   if (currentTab === 'picks') loadPicks();
@@ -1073,7 +1106,7 @@ const nickname = id => { const w = teamName(id).split(' '); return w.length > 1 
 function gameCard(g, attrs, on) {
   return `<button class="game ${on ? 'on' : ''}" ${attrs}>
     <span class="t">${tileHTML(g.visitante, 'xs')}<span>${esc(nickname(g.visitante))}</span></span>
-    <span class="at">en</span>
+    ${atHTML(g.local, g.visitante)}
     <span class="t">${tileHTML(g.local, 'xs')}<span>${esc(nickname(g.local))}</span></span>
   </button>`;
 }
@@ -2806,7 +2839,7 @@ function renderQ1() {
     const L = g.local, A = g.visitante, k = L + '|' + A, p = P[k];
     const own = mk.filter(m => Q1T.has(m.tipo) && m.local === L && m.visitante === A && (isAdmin || m.proj != null))
       .sort((a, b) => (a.tipo === 'q1' ? 0 : 1) - (b.tipo === 'q1' ? 0 : 1));
-    const head = `<div class="q1h"><div class="tm">${tileHTML(A, 'sm')}<span>${esc(teamAbbr(A))}</span></div><span class="at">en</span><div class="tm r">${tileHTML(L, 'sm')}<span>${esc(teamAbbr(L))}</span></div></div>`;
+    const head = `<div class="q1h"><div class="tm">${tileHTML(A, 'sm')}<span>${esc(teamAbbr(A))}</span></div>${atHTML(L, A)}<div class="tm r">${tileHTML(L, 'sm')}<span>${esc(teamAbbr(L))}</span></div></div>`;
     const sc = p ? `<div class="q1s"><div><b>${f1(p.q1A)}</b><span>${esc(teamAbbr(A))}</span></div><div class="t"><b>${f1(p.q1A + p.q1L)}</b><span>TOTAL 1Q</span></div><div><b>${f1(p.q1L)}</b><span>${esc(teamAbbr(L))}</span></div></div>`
       : `<p class="small-note" style="margin:10px 0 0">${isAdmin ? 'Presiona CALCULAR 1ER CUARTO.' : 'La proyección de este partido aún no está lista.'}</p>`;
     const mkts = own.map(m => q1MktHTML(m, m.tipo === 'q1' ? 'Total 1er cuarto' : `${teamName(m.teamId)} · 1er cuarto`)).join('')
@@ -3693,7 +3726,17 @@ function renderPicks() {
   const hidden = currentPicks.length - shown.length;
   const list = shown.filter(p => picksFilter === 'all' || p.field === picksFilter);
   const head = hidden ? noteHTML(`Se quitaron ${hidden} picks de jugadores reportados como <b>fuera</b> en el reporte de lesiones de ESPN.`) + '<div style="height:10px"></div>' : '';
-  out.innerHTML = head + list.map(p => `
+  // agrupados por partido, en orden de horario
+  const games = sortByTime(cache.jornadas[J.fecha] || []);
+  const gOf = p => { const t = teamIdByAbbr(p.equipo); const i = games.findIndex(g => g.local === t || g.visitante === t); return i < 0 ? 999 : i; };
+  const byG = {}; list.forEach(p => { const k = gOf(p); (byG[k] = byG[k] || []).push(p); });
+  // dentro de cada partido, los picks del mismo jugador seguiditos (en el orden de su mejor pick)
+  Object.keys(byG).forEach(k => { const first = {}; byG[k].forEach((p, i) => { const n = normN(p.nombre); if (!(n in first)) first[n] = i; });
+    byG[k] = byG[k].map((p, i) => ({ p, i })).sort((x, y) => first[normN(x.p.nombre)] - first[normN(y.p.nombre)] || x.i - y.i).map(x => x.p); });
+  const gHead = k => { const g = games[k]; if (!g) return '<div class="pk-game"><span>Otros</span></div>';
+    const t = gTime(g.local, g.visitante);
+    return `<div class="pk-game">${tileHTML(g.visitante, 'xs')}<span>${esc(teamAbbr(g.visitante))} en ${esc(teamAbbr(g.local))}</span>${tileHTML(g.local, 'xs')}<i class="sp"></i>${t ? `<b>${esc(t.label)}</b>` : ''}<em>${byG[k].length} pick${byG[k].length === 1 ? '' : 's'}</em></div>`; };
+  out.innerHTML = head + Object.keys(byG).map(Number).sort((a, b) => a - b).map(k => gHead(k) + byG[k].map(p => `
     <div class="pick fade-in">
       ${avatarHTML(p.nombre, teamIdByAbbr(p.equipo), 'sm', p.eid || eidByName(p.nombre, teamIdByAbbr(p.equipo)))}
       <div>
@@ -3705,7 +3748,7 @@ function renderPicks() {
             : `<div class="pk-rec nov">${esc(R.why)}</div>`; })()}
       </div>
       <div class="val"><b>${f1(p.projected)}</b><span>Piso ${f1(p.floor)}</span>${p.of ? `<span>Lo superó ${p.hits}/${p.of}</span>` : ''}${canCap() ? `<button class="linmini" data-i="${currentPicks.indexOf(p)}">Líneas</button>` : ''}${isAdmin ? `<button class="pubmini" data-i="${currentPicks.indexOf(p)}">Publicar</button>` : ''}</div>
-    </div>`).join('');
+    </div>`).join('')).join('');
   if (!canCap()) return;
   out.querySelectorAll('.linmini').forEach(b => b.addEventListener('click', async () => {
     const P = pickCtx(currentPicks[Number(b.dataset.i)]);
