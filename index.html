@@ -3805,7 +3805,7 @@ $('picks-generate').addEventListener('click', async () => {
     }
     const tierOrder = { 'Muy constante': 0, 'Constante': 1 };
     picks.sort((a, b) => tierOrder[a.tier] - tierOrder[b.tier] || ((b.of ? b.hits / b.of : 0.5) - (a.of ? a.hits / a.of : 0.5)) || b.projected - a.projected);
-    const top = picks.slice(0, 80);
+    const top = picks.slice(0, 100);
     const at = new Date().toISOString();
     await setDoc(doc(db, 'picks_dia', fecha), { picks: top, generated_at: at });
     try { await refreshLineProj(fecha); } catch (e) { console.warn('Líneas sin calcular', e); }
