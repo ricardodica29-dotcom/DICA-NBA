@@ -3786,7 +3786,7 @@ $('picks-generate').addEventListener('click', async () => {
         if (xi && (xi.cat === 'out' || xi.cat === 'doubt')) continue;
         const P = projectPlayer(pl, own, riv);
         if (!P || (P.n < 5 && !(pl.previa && pl.previa.n >= 20))) continue;
-        if (P.stats.min.proj < 22) continue;
+        if (P.stats.min.proj < 21) continue;
         Object.keys(PICK_RULES).forEach(k => {
           const rule = PICK_RULES[k], st = P.stats[k];
           if (st.proj < rule.min) return;
@@ -3819,3 +3819,4 @@ $('picks-generate').addEventListener('click', async () => {
 </script>
 </body>
 </html>
+
