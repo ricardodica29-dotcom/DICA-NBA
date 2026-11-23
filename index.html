@@ -405,7 +405,12 @@ table.log td.hl{font-weight:800}
 .pick+.pick{margin-top:8px}
 .pk-game{display:flex;align-items:center;gap:8px;margin:18px 0 8px;padding:8px 10px;background:var(--ink,#1b1714);color:#fff;border-radius:4px;font-weight:800;font-size:13px;letter-spacing:.3px}
 .pk-game:first-child,.note+div+.pk-game{margin-top:0}
-.pk-game .sp{flex:1}.pk-game b{color:#f3c969;font-weight:800}.pk-game em{font-style:normal;font-weight:600;opacity:.65;font-size:11px}
+.pk-game .sp{flex:1}
+.pk-share{margin-left:6px;width:34px;height:30px;border-radius:4px;background:#c9481a;color:#fff;font-size:14px;flex:none}
+.sh-modal{position:fixed;inset:0;z-index:300;background:rgba(20,16,12,.82);display:flex;align-items:center;justify-content:center;padding:calc(var(--st) + 14px) 14px calc(var(--sb) + 14px)}
+.sh-in{background:var(--paper);border-radius:8px;width:100%;max-width:520px;max-height:100%;display:flex;flex-direction:column;padding:14px}
+.sh-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.sh-x{font-size:20px;width:36px;height:36px}
+.sh-imgs{overflow-y:auto;display:flex;flex-direction:column;gap:10px;flex:1;min-height:0}.sh-imgs img{width:100%;border-radius:4px;border:1px solid var(--line);-webkit-touch-callout:default}.pk-game b{color:#f3c969;font-weight:800}.pk-game em{font-style:normal;font-weight:600;opacity:.65;font-size:11px}
 .at small.gt{display:block;font-size:10px;font-weight:800;opacity:.75;margin-top:2px;white-space:nowrap}
 .at{text-align:center}
 .pick .who{font-weight:700;font-size:15px;line-height:1.2}
@@ -2275,14 +2280,17 @@ function ocrCanvas(img, iw, ih) {
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const ctx = cv.getContext('2d', { willReadFrequently: true }); ctx.drawImage(img, 0, 0, W, H);
   const id = ctx.getImageData(0, 0, W, H), d = id.data, GAP = Math.round(W * 0.05), MINS = W * 0.08;
-  const gray = new Uint8ClampedArray(W), red = new Uint8Array(W);
+  // ¿modo oscuro? (fondo negro, letra blanca): se voltea a fondo blanco y letra negra, que es como lee mejor
+  const lum = []; for (let k = 0; k < 4000; k++) { const i = (Math.floor(Math.random() * W * H)) * 4; lum.push(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]); }
+  lum.sort((a, b) => a - b); const dark = lum[lum.length >> 1] < 110;
+  const gray = new Uint8ClampedArray(W), og = new Uint8ClampedArray(W), red = new Uint8Array(W);
   for (let y = 0; y < H; y++) {
     let nRed = 0;
     for (let x = 0; x < W; x++) { const i = (y * W + x) * 4, r = d[i], g = d[i + 1], b = d[i + 2];
-      gray[x] = 0.299 * r + 0.587 * g + 0.114 * b; red[x] = r > 170 && g < 90 && b < 90 ? 1 : 0; nRed += red[x]; }
+      og[x] = 0.299 * r + 0.587 * g + 0.114 * b; gray[x] = dark ? 255 - og[x] : og[x]; red[x] = r > 170 && g < 90 && b < 90 ? 1 : 0; nRed += red[x]; }
     if (nRed >= W * 0.05) {
       let s = -1, prev = -1;
-      const flush = (a, b) => { if (b - a < MINS) return; for (let x = a; x <= b; x++) gray[x] = red[x] ? 255 : (gray[x] > 170 ? 0 : gray[x]); };
+      const flush = (a, b) => { if (b - a < MINS) return; for (let x = a; x <= b; x++) gray[x] = red[x] ? 255 : (og[x] > 170 || og[x] < 90 ? 0 : og[x]); };
       for (let x = 0; x < W; x++) if (red[x]) { if (s < 0) s = x; else if (x - prev > GAP) { flush(s, prev); s = x; } prev = x; }
       if (s >= 0) flush(s, prev);
     }
@@ -2419,7 +2427,10 @@ async function saveQ1FromOCR(raw, juegos, inj) {
 }
 const VALID_AI_MARKETS = new Set(['pts', 'reb', 'ast', 'fg3m', 'pra', 'pr', 'pa', 'ra', 'stl', 'blk', 'sb', 'total']);
 
-async function processPlaydoitScreenshots(fileList) {
+let AI_RETRY = [];
+document.addEventListener('click', e => { if (e.target.closest('#ai-retry-btn') && AI_RETRY.length) processPlaydoitScreenshots(AI_RETRY, { useAI: true }); });
+async function processPlaydoitScreenshots(fileList, opts = {}) {
+  const useAI = !!opts.useAI;   // la IA de respaldo SOLO se usa si tú lo pides con el botón
   const files = [...fileList].filter(f => f && (f.type.startsWith('image/') || f.type.startsWith('video/') || /\.(mov|mp4|m4v|webm)$/i.test(f.name || '')));
   if (!files.length) return;
   const apiKey = getGeminiKey() || getClaudeKey();
@@ -2483,7 +2494,7 @@ async function processPlaydoitScreenshots(fileList) {
       .slice(0, 140)
       .join(', ');
 
-    const rawExtracted = [], failed = [], usedVia = new Set(), q1Raw = [];
+    const rawExtracted = [], failed = [], usedVia = new Set(), q1Raw = [], retry = [];
     let lastFail = '';
     for (let i = 0; i < files.length; i++) {
       const isVideo = files[i].type.startsWith('video/') || /\.(mov|mp4|m4v|webm)$/i.test(files[i].name || '');
@@ -2504,13 +2515,19 @@ async function processPlaydoitScreenshots(fileList) {
       const tag = `Leyendo captura <b>${i + 1} de ${files.length}</b>…`;
       stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> ${tag}`);
       // 1) lector gratis en el celular (sin internet de IA, nunca se satura)
-      try {
+      let ocrErr = '';
+      if (!useAI) try {
         const r = await readScreenshotOCR(files[i], () => { stBox.innerHTML = noteHTML(`<i class="fa-solid fa-spinner fa-spin"></i> ${tag}<br><small>Preparando el lector gratis (solo la primera vez tarda un poco)…</small>`); });
         r.items.forEach(x => x.frame = `${i}`);
         q1Raw.push(...r.q1);
         if (r.items.length || r.q1.length) { rawExtracted.push(...r.items); usedVia.add('lector gratis'); continue; }
-      } catch (e) { console.warn('Lector gratis falló', e); }
-      // 2) si no pudo, usa la IA de respaldo (si hay llave)
+      } catch (e) { console.warn('Lector gratis falló', e); ocrErr = e.message || 'error desconocido'; }
+      // 2) ya no brinca solo a la IA: te avisa y te deja decidir
+      if (!useAI) {
+        failed.push(i + 1); retry.push(files[i]);
+        lastFail = ocrErr ? `El lector gratis no pudo arrancar (${ocrErr}).` : 'El lector gratis no encontró líneas en esa captura. Revisa que se vean el encabezado rojo del mercado, los nombres y los momios.';
+        continue;
+      }
       if (!apiKey) { failed.push(i + 1); lastFail = 'El lector gratis no encontró líneas en esa captura. Revisa que se vean el encabezado rojo del mercado, los nombres y los momios.'; continue; }
       try {
         const b64 = await prepareImageBase64(files[i]);
@@ -2524,7 +2541,9 @@ async function processPlaydoitScreenshots(fileList) {
         failed.push(i + 1); lastFail = e.message || '';
       }
     }
-    const failTxt = failed.length ? ` <b>No se pudo leer la captura ${failed.join(', ')}</b>: ${esc(lastFail || 'intenta de nuevo')}` : '';
+    AI_RETRY = retry;
+    const retryBtn = retry.length && apiKey ? `<br><button type="button" class="btn btn-ink" id="ai-retry-btn" style="margin-top:8px;padding:8px 12px;font-size:13px">Intentar ${retry.length === 1 ? 'esa captura' : 'esas ' + retry.length + ' capturas'} con IA de respaldo</button>` : '';
+    const failTxt = failed.length ? ` <b>No se pudo leer la captura ${failed.join(', ')}</b>: ${esc(lastFail || 'intenta de nuevo')}${retryBtn}` : '';
     AI_FAIL_TXT = failTxt;
 
     // 1er cuarto (total y por equipo): se guarda aparte
@@ -2538,7 +2557,7 @@ async function processPlaydoitScreenshots(fileList) {
     for (let k = rawExtracted.length - 1; k >= 0; k--) { const x = rawExtracted[k]; if (x.market !== 'total' && seenMk[mk4(x)].size > 1) rawExtracted.splice(k, 1); }
 
     if (!rawExtracted.length) {
-      stBox.innerHTML = noteHTML(failed.length === files.length ? esc(lastFail || AI_BUSY_MSG)
+      stBox.innerHTML = noteHTML(failed.length === files.length ? esc(lastFail || AI_BUSY_MSG) + retryBtn
         : 'No se detectaron líneas en esas capturas. Asegúrate de que se vean el encabezado rojo del mercado, los nombres y los momios.' + failTxt, failed.length === files.length ? 'bad' : 'warn');
       return;
     }
@@ -2684,6 +2703,7 @@ aiDrop.addEventListener('drop', e => {
 });
 $('ai-file-in').addEventListener('change', e => {
   if (e.target.files?.length) processPlaydoitScreenshots(e.target.files);
+  e.target.value = '';
 });
 window.addEventListener('paste', e => {
   if (currentTab !== 'picks' || !canCap()) return;
@@ -3713,6 +3733,116 @@ function eidByName(nombre, teamId) {
 }
 function teamIdByAbbr(ab) { return Object.keys(cache.teamMeta).find(id => teamAbbr(id) === ab) || null; }
 
+// ---------- Imágenes para redes (solo admin) ----------
+let PK_GROUPS = { byG: {}, games: [] };
+const SHI = { W: 1080, H: 1350, PER: 5 };
+function fitText(ctx, txt, maxW) { if (ctx.measureText(txt).width <= maxW) return txt; let t = txt; while (t.length > 3 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1); return t + '…'; }
+async function drawTeamBadge(ctx, id, x, y, size, img) {
+  const c = teamColors(id);
+  ctx.save(); rr(ctx, x, y, size, size, size * 0.18); ctx.fillStyle = img ? '#fff' : c.bg; ctx.fill(); ctx.clip();
+  if (img) ctx.drawImage(img, x + size * 0.08, y + size * 0.08, size * 0.84, size * 0.84);
+  else { ctx.fillStyle = c.fg; ctx.font = `700 ${Math.round(size * 0.32)}px Archivo, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(teamAbbr(id), x + size / 2, y + size / 2); }
+  ctx.restore();
+}
+async function buildShareImages(g, picks) {
+  await Promise.all([document.fonts.load('80px Anton'), document.fonts.load('700 40px Archivo'), document.fonts.load('500 30px Archivo')]).catch(() => {});
+  const icon = true; const [lgA, lgL] = await Promise.all([loadImg(logoUrl(g.visitante, 200)), loadImg(logoUrl(g.local, 200))]);
+  const heads = await Promise.all(picks.map(p => loadImg(headshotUrl(p.eid || eidByName(p.nombre, teamIdByAbbr(p.equipo)), 260))));
+  const n = Math.ceil(picks.length / SHI.PER), t = gTime(g.local, g.visitante);
+  const cut = k => Math.round(k * picks.length / n);   // reparto parejo: 15 → 5/5/5, 16 → 4/4/4/4
+  const out = [];
+  for (let part = 0; part < n; part++) {
+    const items = picks.slice(cut(part), cut(part + 1)), hs = heads.slice(cut(part), cut(part + 1));
+    const cv = document.createElement('canvas'); cv.width = SHI.W; cv.height = SHI.H; const ctx = cv.getContext('2d');
+    // fondo madera como la app
+    ctx.fillStyle = '#efe3cf'; ctx.fillRect(0, 0, SHI.W, SHI.H);
+    ctx.fillStyle = '#e8d9bf'; for (let x = 46; x < SHI.W; x += 48) ctx.fillRect(x, 0, 2, SHI.H);
+    // encabezado
+    ctx.fillStyle = '#1c1712'; ctx.fillRect(0, 0, SHI.W, 250); ctx.fillStyle = '#c9481a'; ctx.fillRect(0, 250, SHI.W, 8);
+    drawLogo(ctx, 50, 42, 104);
+    ctx.fillStyle = '#fbf6ec'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.font = '76px Anton, Impact, sans-serif'; ctx.fillText('DICA NBA', icon ? 178 : 50, 118);
+    ctx.font = '600 26px Archivo, sans-serif'; ctx.fillStyle = '#c9b89c'; ctx.fillText('PICKS DEL DÍA · ' + fechaLabel(J.fecha).toUpperCase(), icon ? 180 : 50, 152);
+    if (n > 1) { ctx.textAlign = 'right'; ctx.font = '60px Anton, Impact, sans-serif'; ctx.fillStyle = '#c9481a'; ctx.fillText(`${part + 1}/${n}`, SHI.W - 50, 118); ctx.textAlign = 'left'; }
+    // partido
+    await drawTeamBadge(ctx, g.visitante, 50, 172, 60, lgA);
+    ctx.fillStyle = '#fbf6ec'; ctx.font = '700 34px Archivo, sans-serif';
+    const mt = `${teamAbbr(g.visitante)} en ${teamAbbr(g.local)}`; ctx.fillText(mt, 126, 214);
+    const mw = ctx.measureText(mt).width; await drawTeamBadge(ctx, g.local, 126 + mw + 16, 172, 60, lgL);
+    if (t) { ctx.textAlign = 'right'; ctx.fillStyle = '#f3c969'; ctx.font = '700 34px Archivo, sans-serif'; ctx.fillText(t.label, SHI.W - 50, 214); ctx.textAlign = 'left'; }
+    // picks
+    const top = 284, rowH = (SHI.H - top - 104) / SHI.PER, gap = 14, cardH = rowH - gap;
+    items.forEach((p, i) => {
+      const y = top + i * rowH, x = 40, w = SHI.W - 80, tid = teamIdByAbbr(p.equipo), c = teamColors(tid);
+      ctx.save(); ctx.shadowColor = 'rgba(28,23,18,.12)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3; rr(ctx, x, y, w, cardH, 10); ctx.fillStyle = '#fbf6ec'; ctx.fill(); ctx.restore();
+      ctx.strokeStyle = '#d8c7ab'; ctx.lineWidth = 2; rr(ctx, x, y, w, cardH, 10); ctx.stroke();
+      // foto
+      const R = 58, cx = x + 30 + R, cy = y + 30 + R;
+      ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fillStyle = hs[i] ? '#f3eadb' : c.bg; ctx.fill(); ctx.clip();
+      if (hs[i]) { const ih = 2 * R * 1.05, iw = ih / 0.73; ctx.drawImage(hs[i], cx - iw / 2, cy - R + 6, iw, ih); }
+      else { ctx.fillStyle = c.fg; ctx.font = '700 40px Archivo, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(initials(p.nombre), cx, cy); }
+      ctx.restore(); ctx.strokeStyle = '#d8c7ab'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+      // texto
+      const tx = x + 30 + 2 * R + 26, valW = 250, txW = w - (tx - x) - valW - 10, right = x + w - 28;
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = '#1c1712';
+      ctx.font = '700 38px Archivo, sans-serif'; ctx.fillText(fitText(ctx, p.nombre, txW), tx, y + 54);
+      ctx.fillStyle = '#5f5346'; ctx.font = '500 28px Archivo, sans-serif'; ctx.fillText(fitText(ctx, `${LABEL[p.field] || p.field} · ${p.equipo} vs ${p.rival}`, txW), tx, y + 92);
+      // proyección
+      ctx.textAlign = 'right'; ctx.fillStyle = '#1c1712'; ctx.font = '76px Anton, Impact, sans-serif'; ctx.fillText(f1(p.projected), right, y + 84);
+      ctx.fillStyle = '#5f5346'; ctx.font = '500 24px Archivo, sans-serif'; ctx.fillText(`Piso ${f1(p.floor)}${p.of ? ` · ${p.hits}/${p.of}` : ''}`, right, y + 118);
+      ctx.textAlign = 'left';
+      // etiqueta + recomendación (si capturaste la línea), a lo ancho
+      const by = y + cardH - 58;
+      ctx.font = '700 22px Archivo, sans-serif'; const tw = ctx.measureText(p.tier).width + 28, t1 = p.tier === 'Muy constante';
+      rr(ctx, tx, by, tw, 38, 5); ctx.fillStyle = t1 ? '#2f7d4f' : '#f3eadb'; ctx.fill(); if (!t1) { ctx.strokeStyle = '#d8c7ab'; ctx.lineWidth = 2; ctx.stroke(); }
+      ctx.fillStyle = t1 ? '#fff' : '#3a3129'; ctx.fillText(p.tier, tx + 14, by + 27);
+      const m = (LINES[J.fecha] || []).find(z => z.key === pickCtx(p).key), Rc = m ? recOf(m) : null;
+      if (Rc && Rc.best) {
+        const rec = `✓ ${Rc.best.dir === 'mas' ? 'Más' : 'Menos'} de ${lineFmt(Rc.best.linea)} · ${Math.round(Rc.best.prob * 100)}% prob.${Rc.best.momio ? ` · momio ${Rc.best.momio.toFixed(2)}` : ''}`;
+        const rx = tx + tw + 12; ctx.font = '700 24px Archivo, sans-serif';
+        const rw = Math.min(ctx.measureText(rec).width + 30, right - rx);
+        rr(ctx, rx, by, rw, 38, 5); ctx.fillStyle = '#e7f3ea'; ctx.fill(); ctx.strokeStyle = '#b9dcc4'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.fillStyle = '#1d5a35'; ctx.fillText(fitText(ctx, rec, rw - 30), rx + 15, by + 27);
+      }
+      ctx.textAlign = 'left';
+    });
+    // pie
+    ctx.fillStyle = '#1c1712'; ctx.fillRect(0, SHI.H - 90, SHI.W, 90);
+    ctx.fillStyle = '#c9481a'; ctx.font = '40px Anton, Impact, sans-serif'; ctx.fillText('SI ES DICA, ES EXCELENCIA', 50, SHI.H - 32);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#c9b89c'; ctx.font = '600 24px Archivo, sans-serif'; ctx.fillText('By: Ricardo Dionicio', SHI.W - 50, SHI.H - 36); ctx.textAlign = 'left';
+    out.push(cv);
+  }
+  return out;
+}
+async function sharePicksGame(k, btn) {
+  const g = PK_GROUPS.games[k], picks = PK_GROUPS.byG[k] || [];
+  if (!g || !picks.length) return;
+  const old = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>'; btn.disabled = true;
+  try {
+    await loadLines(J.fecha).catch(() => {});
+    const cvs = await buildShareImages(g, picks);
+    const name = `DICA_${teamAbbr(g.visitante)}-${teamAbbr(g.local)}_${J.fecha}`;
+    const blobs = await Promise.all(cvs.map(c => new Promise(r => c.toBlob(r, 'image/png'))));
+    const files = blobs.map((b, i) => new File([b], `${name}_${i + 1}de${blobs.length}.png`, { type: 'image/png' }));
+    const urls = blobs.map(b => URL.createObjectURL(b));
+    const md = document.createElement('div'); md.className = 'sh-modal';
+    md.innerHTML = `<div class="sh-in"><div class="sh-top"><b>${files.length} imagen${files.length === 1 ? '' : 'es'} · ${esc(teamAbbr(g.visitante))} en ${esc(teamAbbr(g.local))}</b><button class="sh-x" aria-label="Cerrar">✕</button></div>
+      <div class="sh-imgs">${urls.map(u => `<img src="${u}" alt="">`).join('')}</div>
+      <p class="small-note" style="margin:8px 0">Si el botón no funciona, deja presionada cada imagen y elige <b>Guardar en Fotos</b>.</p>
+      <button class="btn btn-primary sh-go"><i class="fa-solid fa-share-nodes"></i> COMPARTIR / GUARDAR</button></div>`;
+    document.body.appendChild(md);
+    const close = () => { md.remove(); urls.forEach(u => URL.revokeObjectURL(u)); };
+    md.querySelector('.sh-x').onclick = close; md.addEventListener('click', e => { if (e.target === md) close(); });
+    md.querySelector('.sh-go').onclick = async () => {
+      try {
+        if (navigator.canShare && navigator.canShare({ files })) { await navigator.share({ files }); return; }
+      } catch (e) { if (e.name === 'AbortError') return; }
+      files.forEach((f, i) => { const a = document.createElement('a'); a.href = urls[i]; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); });
+    };
+  } catch (e) { console.error(e); alert('No se pudieron crear las imágenes: ' + (e.message || e)); }
+  finally { btn.innerHTML = old; btn.disabled = false; }
+}
+
 function renderPicks() {
   const out = $('picks-out'), fl = $('picks-filters');
   if (!currentPicks.length) { fl.classList.add('hidden'); out.innerHTML = noteHTML('Ningún jugador pasó el filtro de constancia en esta jornada.', 'warn'); return; }
@@ -3735,7 +3865,8 @@ function renderPicks() {
     byG[k] = byG[k].map((p, i) => ({ p, i })).sort((x, y) => first[normN(x.p.nombre)] - first[normN(y.p.nombre)] || x.i - y.i).map(x => x.p); });
   const gHead = k => { const g = games[k]; if (!g) return '<div class="pk-game"><span>Otros</span></div>';
     const t = gTime(g.local, g.visitante);
-    return `<div class="pk-game">${tileHTML(g.visitante, 'xs')}<span>${esc(teamAbbr(g.visitante))} en ${esc(teamAbbr(g.local))}</span>${tileHTML(g.local, 'xs')}<i class="sp"></i>${t ? `<b>${esc(t.label)}</b>` : ''}<em>${byG[k].length} pick${byG[k].length === 1 ? '' : 's'}</em></div>`; };
+    return `<div class="pk-game">${tileHTML(g.visitante, 'xs')}<span>${esc(teamAbbr(g.visitante))} en ${esc(teamAbbr(g.local))}</span>${tileHTML(g.local, 'xs')}<i class="sp"></i>${t ? `<b>${esc(t.label)}</b>` : ''}<em>${byG[k].length} pick${byG[k].length === 1 ? '' : 's'}</em>${isAdmin ? `<button class="pk-share" data-g="${k}" title="Imágenes para redes"><i class="fa-solid fa-camera"></i></button>` : ''}</div>`; };
+  PK_GROUPS = { byG, games };
   out.innerHTML = head + Object.keys(byG).map(Number).sort((a, b) => a - b).map(k => gHead(k) + byG[k].map(p => `
     <div class="pick fade-in">
       ${avatarHTML(p.nombre, teamIdByAbbr(p.equipo), 'sm', p.eid || eidByName(p.nombre, teamIdByAbbr(p.equipo)))}
@@ -3749,6 +3880,7 @@ function renderPicks() {
       </div>
       <div class="val"><b>${f1(p.projected)}</b><span>Piso ${f1(p.floor)}</span>${p.of ? `<span>Lo superó ${p.hits}/${p.of}</span>` : ''}${canCap() ? `<button class="linmini" data-i="${currentPicks.indexOf(p)}">Líneas</button>` : ''}${isAdmin ? `<button class="pubmini" data-i="${currentPicks.indexOf(p)}">Publicar</button>` : ''}</div>
     </div>`).join('')).join('');
+  if (isAdmin) out.querySelectorAll('.pk-share').forEach(b => b.addEventListener('click', () => sharePicksGame(Number(b.dataset.g), b)));
   if (!canCap()) return;
   out.querySelectorAll('.linmini').forEach(b => b.addEventListener('click', async () => {
     const P = pickCtx(currentPicks[Number(b.dataset.i)]);
@@ -3819,4 +3951,5 @@ $('picks-generate').addEventListener('click', async () => {
 </script>
 </body>
 </html>
+
 
